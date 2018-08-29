@@ -289,9 +289,6 @@ struct prueth_hsr_prp_node {
 
 #define OCMC_RAM_SIZE		(SZ_64K - SZ_8K)
 
-/* Pn_COL_BUFFER_OFFSET @ 0xEE00 0xF400 0xFA00 */
-#define OCMC_RAM_SIZE_SWITCH	(SZ_64K)
-
 /* TX Minimum Inter packet gap */
 #define TX_MIN_IPG		0xb8
 
@@ -373,7 +370,7 @@ enum pruss_ethtype {
 /* A group of PCPs are mapped to a Queue. This is the size of firmware
  * array in shared memory
  */
-#define PCP_GROUP_TO_QUEUE_MAP_SIZE	8
+#define PCP_GROUP_TO_QUEUE_MAP_SIZE	4
 
 /* In switch mode there are 3 real ports i.e. 3 mac addrs.
  * however Linux sees only the host side port. The other 2 ports

@@ -13,32 +13,23 @@ Required properties:
 - sram	           : pHandle to OCMC SRAM node
 - interrupt-parent : pHandle to the PRUSS INTC node
 - rx-queue-size    : Array of queue sizes in rx direction (Ingress)
-                     Format /bits/ 16 <q1 q2 q3 q4 colq>
+                     Format /bits/ 16 <q1 q2 q3 q4>
 - tx-queue-size    : Array of queue sizes in tx direction (Egress)
-                     Format /bits/ 16 <q1 q2 q3 q4 colq>
-
-NOTE for rx-queue-size
-    For EMAC and Switch/HSR/PRP, only the first 4 q sizes take
-    effect. The 5th (if present) will be ignored.
-NOTE for tx-queue-size
-    For EMAC, only the first 4 q sizes take effect.
-    The 5th (if present) will be ignored.
-    For Switch/HSR/PRP, all 5 q sizes take effect.
-    All 5 must present if need to config q sizes.
+                     Format /bits/ 16 <q1 q2 q3 q4>
 
     If no q size config exists for a particular port in
     dts, the following defaults for that port will
     be used.
 
     HSR/PRP Defaults:
-    host: rx-queue-size = /bits/ 16 <206 206 206 206 0>
-    mii0: tx-queue-size = /bits/ 16 <97 97 97 97 48>
-    mii1: tx-queue-size = /bits/ 16 <97 97 97 97 48>
+    host: rx-queue-size = /bits/ 16 <206 206 206 206>
+    mii0: tx-queue-size = /bits/ 16 <97 97 97 97>
+    mii1: tx-queue-size = /bits/ 16 <97 97 97 97>
 
     EMAC Defaults:
-    host: rx-queue-size = /bits/ 16 <194 194 194 194 0>
-    mii0: tx-queue-size = /bits/ 16 <97 97 97 97 48>
-    mii1: tx-queue-size = /bits/ 16 <97 97 97 97 48>
+    host: rx-queue-size = /bits/ 16 <194 194 194 194>
+    mii0: tx-queue-size = /bits/ 16 <97 97 97 97>
+    mii1: tx-queue-size = /bits/ 16 <97 97 97 97>
 
 Must contain children, one for each of the MAC ports.
 Children must be named ethernet-mii0 and ethernet-mii1.

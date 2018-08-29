@@ -566,12 +566,21 @@ static struct prueth_col_tx_context_info col_tx_context_infos[PRUETH_PORT_MAX];
 static struct prueth_col_rx_context_info col_rx_context_infos[PRUETH_PORT_MAX];
 static struct prueth_queue_desc queue_descs[PRUETH_PORT_MAX][NUM_QUEUES + 1];
 
-/* VLAN-tag PCP to priority queue map for EMAC/Switch/HSR/PRP
+/* VLAN-tag PCP to priority queue map for EMAC used by driver. Should be
+ * in sync with fw_pcp_default_priority_queue_map[]
  * Index is PCP val.
  *   low  - pcp 0..1 maps to Q4
  *              2..3 maps to Q3
  *              4..5 maps to Q2
  *   high - pcp 6..7 maps to Q1.
+ *
+ * VLAN-tag PCP to priority queue map for Switch/HSR/PRP used by driver
+ * Index is PCP val / 2.
+ *   low  - pcp 0..3 maps to Q4 for Host
+ *   high - pcp 4..7 maps to Q3 for Host
+ *   low  - pcp 0..3 maps to Q2 for PRU-x where x = 1 for PRUETH_PORT_MII0
+ *          0 for PRUETH_PORT_MII1
+ *   high - pcp 4..7 maps to Q1 for PRU-x
  */
 static const unsigned short emac_pcp_tx_priority_queue_map[] = {
 	PRUETH_QUEUE4, PRUETH_QUEUE4,
@@ -580,7 +589,15 @@ static const unsigned short emac_pcp_tx_priority_queue_map[] = {
 	PRUETH_QUEUE1, PRUETH_QUEUE1,
 };
 
-/* Order of processing of port Rx queues */
+/* Scan order of Priority queues for Switch/HSR/PRP/Dual EMAC at each ingress
+ * port. Should be in sync with fw_pcp_default_priority_queue_map[].
+ * Lower queue value has higher priority. i.e Q3 is higher priority
+ * than Q4. Decides the scanning order by driver. Index is port/queue id.
+ *   low  - pcp 0..3 maps to Q4 for Host from PRU-0
+ *   high - pcp 4..7 maps to Q3 for Host from PRU-0
+ *   low  - pcp 0..3 maps to Q2 for Host from PRU-1
+ *   high - pcp 4..7 maps to Q1 for Host from PRU-1
+ */
 static const unsigned int emac_port_rx_priority_queue_ids[][2] = {
 	[PRUETH_PORT_HOST] = {
 		0, 0
@@ -1065,44 +1082,49 @@ static int prueth_emac_config(struct prueth *prueth, struct prueth_emac *emac)
 	return 0;
 }
 
-/* Host rx PCP to priority Queue map,
- * byte 0 => PRU 1, PCP 0-1 => Q3
- * byte 1 => PRU 1, PCP 2-3 => Q3
- * byte 2 => PRU 1, PCP 4-5 => Q2
- * byte 3 => PRU 1, PCP 6-7 => Q2
- * byte 4 => PRU 0, PCP 0-1 => Q1
- * byte 5 => PRU 0, PCP 2-3 => Q1
- * byte 6 => PRU 0, PCP 4-5 => Q0
- * byte 7 => PRU 0, PCP 6-7 => Q0
+/* PRU firmware default PCP to priority Queue map for ingress & egress
+ *
+ * At ingress to Host
+ * ==================
+ * byte 0 => PRU 1, PCP 0-3 => Q3
+ * byte 1 => PRU 1, PCP 4-7 => Q2
+ * byte 2 => PRU 0, PCP 0-3 => Q1
+ * byte 3 => PRU 0, PCP 4-7 => Q0
+ *
+ * At egress to wire/network on PRU-0 and PRU-1
+ * ============================================
+ * byte 0 => Host, PCP 0-3 => Q3
+ * byte 1 => Host, PCP 4-7 => Q2
+ *
+ * PRU-0
+ * -----
+ * byte 2 => PRU-1, PCP 0-3 => Q1
+ * byte 3 => PRU-1, PCP 4-7 => Q0
+ *
+ * PRU-1
+ * -----
+ * byte 2 => PRU-0, PCP 0-3 => Q1
+ * byte 3 => PRU-0, PCP 4-7 => Q0
  *
  * queue names below are named 1 based. i.e PRUETH_QUEUE1 is Q0,
  * PRUETH_QUEUE2 is Q1 and so forth. Current assumption in
  * the driver code is that lower the queue number higher the
  * priority of the queue.
  */
-static u8 sw_pcp_rx_priority_queue_map[PCP_GROUP_TO_QUEUE_MAP_SIZE] = {
+static u8 fw_pcp_default_priority_queue_map[PCP_GROUP_TO_QUEUE_MAP_SIZE] = {
 	/* port 2 or PRU 1 */
-	PRUETH_QUEUE4, PRUETH_QUEUE4,
-	PRUETH_QUEUE3, PRUETH_QUEUE3,
+	PRUETH_QUEUE4, PRUETH_QUEUE3,
 	/* port 1 or PRU 0 */
-	PRUETH_QUEUE2, PRUETH_QUEUE2,
-	PRUETH_QUEUE1, PRUETH_QUEUE1,
+	PRUETH_QUEUE2, PRUETH_QUEUE1,
 };
 
-static int prueth_hsr_prp_pcp_rxq_map_config(struct prueth *prueth)
+static int prueth_hsr_prp_pcp_queue_map_config(struct prueth *prueth)
 {
 	void __iomem *sram  = prueth->mem[PRUETH_MEM_SHARED_RAM].va;
-	int i, j, pcp = (PCP_GROUP_TO_QUEUE_MAP_SIZE / 2);
-	u32 val;
 
-	for (i = 0; i < 2; i++) {
-		val = 0;
-		for (j = 0; j < pcp; j++)
-			val |=
-			(sw_pcp_rx_priority_queue_map[i * pcp + j] << (j * 8));
-		writel(val, sram + QUEUE_2_PCP_MAP_OFFSET + i * 4);
-	}
-
+	memcpy_toio(sram + QUEUE_2_PCP_MAP_OFFSET,
+		    &fw_pcp_default_priority_queue_map[0],
+		    PCP_GROUP_TO_QUEUE_MAP_SIZE);
 	return 0;
 }
 
@@ -1301,7 +1323,7 @@ static int prueth_hsr_prp_config(struct prueth *prueth)
 	if (prueth->emac_configured)
 		return 0;
 
-	prueth_hsr_prp_pcp_rxq_map_config(prueth);
+	prueth_hsr_prp_pcp_queue_map_config(prueth);
 	prueth_hsr_prp_host_table_init(prueth);
 	prueth_hsr_prp_node_table_init(prueth);
 	prueth_hsr_prp_port_table_init(prueth);
@@ -1495,9 +1517,7 @@ static int prueth_tx_enqueue(struct prueth_emac *emac, struct sk_buff *skb,
 	void __iomem *dram;
 	u32 wr_buf_desc;
 	int ret;
-	bool colq_selected = false;
 	void __iomem *sram = NULL;
-	u8 status;
 
 	switch (emac->port_id) {
 	case PRUETH_PORT_MII0:
@@ -1533,44 +1553,6 @@ static int prueth_tx_enqueue(struct prueth_emac *emac, struct sk_buff *skb,
 	/* Get the tx queue */
 	queue_desc = emac->tx_queue_descs + queue_id;
 	txqueue = &queue_infos[txport][queue_id];
-
-	if (emac->tx_colq_descs) {
-		/* Switch needs to handle tx collision */
-		status = readb(&queue_desc->status);
-		if (status & PRUETH_MASTER_QUEUE_BUSY) {
-			/* Tx q busy, put pkt in col Q */
-			++emac->tx_collisions;
-			status = readb(dram + COLLISION_STATUS_ADDR + txport);
-			if (status) {
-				/* Tx colq busy also, drop pkt */
-				++emac->tx_collision_drops;
-				return -EBUSY;
-			}
-			/* Tx colq free, take it */
-			txqueue = &tx_colq_infos[txport];
-			queue_desc = emac->tx_colq_descs;
-			colq_selected = true;
-		} else {
-			/* Tx q not busy. Acquire q by setting busy_s bit */
-			writeb(0x1, &queue_desc->busy_s);
-
-			/* Again check if host acquired q successfully
-			 * by checking busy_m bit
-			 */
-			status = readb(&queue_desc->status);
-			if (status & PRUETH_MASTER_QUEUE_BUSY) {
-				/* Nope. Clear busy_s bit */
-				writeb(0x0, &queue_desc->busy_s);
-
-				/* tx q collision, put pkt in col Q */
-				++emac->tx_collisions;
-				txqueue = &tx_colq_infos[txport];
-				queue_desc = emac->tx_colq_descs;
-				colq_selected = true;
-			}
-		}
-	}
-
 	buffer_desc_count = txqueue->buffer_desc_end -
 			    txqueue->buffer_desc_offset;
 	buffer_desc_count /= BD_SIZE;
@@ -1599,7 +1581,6 @@ static int prueth_tx_enqueue(struct prueth_emac *emac, struct sk_buff *skb,
 		/* Release the queue clear busy_s bit.
 		 * This has no harm even in emac case.
 		 */
-		writeb(0x0, &queue_desc->busy_s);
 		return -ENOBUFS;
 	}
 	/* calculate end BD address post write */
@@ -1631,11 +1612,7 @@ static int prueth_tx_enqueue(struct prueth_emac *emac, struct sk_buff *skb,
 		/* copy wrapped part */
 		src_addr += bytes;
 		remaining = pktlen - bytes;
-		if (colq_selected)
-			/* +++TODO: should not happen */
-			dst_addr += bytes;
-		else
-			dst_addr = ocmc_ram + txqueue->buffer_offset;
+		dst_addr = ocmc_ram + txqueue->buffer_offset;
 		memcpy(dst_addr, src_addr, remaining);
 	} else {
 		memcpy(dst_addr, src_addr, pktlen);
@@ -1674,16 +1651,6 @@ static int prueth_tx_enqueue(struct prueth_emac *emac, struct sk_buff *skb,
 	 */
 	update_wr_ptr = txqueue->buffer_desc_offset + (update_block * BD_SIZE);
 	writew(update_wr_ptr, &queue_desc->wr_ptr);
-
-	/* release the queue clear busy_s bit */
-	writeb(0x0, &queue_desc->busy_s);
-
-	/* if packet was put in collision queue then
-	 * indiciate it to collision task
-	 */
-	if (colq_selected)
-		writeb((queue_id << 1) | 0x01,
-		       dram + COLLISION_STATUS_ADDR + txport);
 
 	return 0;
 }
@@ -2186,14 +2153,12 @@ static int emac_calculate_queue_offsets(struct prueth *prueth,
 	return ret;
 }
 
-/* EMAC/Switch/HSR/PRP defaults. EMAC doesn't have collision queue
- * which is the last entry
- */
-static u16 txq_size_defaults[NUM_QUEUES + 1] = {97, 97, 97, 97, 48};
+/* EMAC/Switch/HSR/PRP defaults. */
+static u16 txq_size_defaults[NUM_QUEUES] = {97, 97, 97, 97};
 /* switch/HSR/PRP */
-static u16 sw_rxq_size_defaults[NUM_QUEUES + 1] = {206, 206, 206, 206};
+static u16 sw_rxq_size_defaults[NUM_QUEUES] = {206, 206, 206, 206};
 /* EMAC */
-static u16 emac_rxq_size_defaults[NUM_QUEUES + 1] = {194, 194, 194, 194};
+static u16 emac_rxq_size_defaults[NUM_QUEUES] = {194, 194, 194, 194};
 
 static int prueth_of_get_queue_sizes(struct prueth *prueth,
 				     struct device_node *np,
@@ -2201,12 +2166,11 @@ static int prueth_of_get_queue_sizes(struct prueth *prueth,
 {
 	struct prueth_mmap_port_cfg_basis *pb;
 	u16 *queue_sizes;
-	int num_queues, i;
+	int i;
 	char *propname;
 
 	if (port == PRUETH_PORT_HOST) {
 		propname = "rx-queue-size";
-		num_queues = NUM_QUEUES;
 		if (PRUETH_HAS_SWITCH(prueth))
 			queue_sizes = sw_rxq_size_defaults;
 		else
@@ -2214,9 +2178,6 @@ static int prueth_of_get_queue_sizes(struct prueth *prueth,
 	} else if (port <= PRUETH_PORT_MII1) {
 		propname = "tx-queue-size";
 		queue_sizes = txq_size_defaults;
-		num_queues = NUM_QUEUES;
-		if (PRUETH_HAS_SWITCH(prueth))
-			num_queues = NUM_QUEUES + 1;
 	} else {
 		return -EINVAL;
 	}
@@ -2225,14 +2186,11 @@ static int prueth_of_get_queue_sizes(struct prueth *prueth,
 	 * Hence don't check return value and continue to move
 	 * queue sizes (default or new) to port_cfg_basis
 	 */
-	of_property_read_u16_array(np, propname, queue_sizes, num_queues);
+	of_property_read_u16_array(np, propname, queue_sizes, NUM_QUEUES);
 
 	pb = &prueth->mmap_port_cfg_basis[port];
 	for (i = PRUETH_QUEUE1; i <= PRUETH_QUEUE4; i++)
 		pb->queue_size[i] = queue_sizes[i];
-
-	if (PRUETH_HAS_SWITCH(prueth))
-		pb->col_queue_size = queue_sizes[i];
 
 	return 0;
 }
@@ -3123,7 +3081,11 @@ static u16 prueth_get_tx_queue_id(struct prueth *prueth, struct sk_buff *skb)
 		pcp = 0;
 	else
 		pcp = (vlan_tci & VLAN_PRIO_MASK) >> VLAN_PRIO_SHIFT;
-
+	/* For switch, we use only QUEUE4 and QUEUE3 at the egress. QUEUE2 and
+	 * QUEUE1 are used for port to port traffic
+	 */
+	if (PRUETH_HAS_SWITCH(prueth))
+		pcp >>= 1;
 	return emac_pcp_tx_priority_queue_map[pcp];
 }
 
@@ -4260,11 +4222,7 @@ static int prueth_probe(struct platform_device *pdev)
 		 prueth->sw_mc_mac_mask[4],
 		 prueth->sw_mc_mac_mask[5]);
 
-	if (PRUETH_HAS_SWITCH(prueth))
-		prueth->ocmc_ram_size = OCMC_RAM_SIZE_SWITCH;
-	else
-		prueth->ocmc_ram_size = OCMC_RAM_SIZE;
-
+	prueth->ocmc_ram_size = OCMC_RAM_SIZE;
 	/* OCMC_RAM1 */
 	prueth->sram_pool = of_gen_pool_get(np, "sram", 0);
 	if (!prueth->sram_pool) {
