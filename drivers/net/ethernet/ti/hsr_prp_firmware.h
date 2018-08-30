@@ -24,7 +24,7 @@
 #define MODEM                             0x05
 
 /* PRU0 DMEM */
-#define DBG_START                         0x1C00
+#define DBG_START                         0x1E00
 
 #define DUPLICATE_HOST_TABLE              0x0200
 #define DUPLICATE_HOST_TABLE_END          0x19f4
@@ -64,8 +64,7 @@
 
 #define DUPLICATE_PORT_TABLE_DMEM_SIZE        0x0C00
 #define DUPLICATE_HOST_TABLE_DMEM_SIZE        0x1800
-#define LRE_STATS_DMEM_SIZE_HSR               0x0064
-#define LRE_STATS_DMEM_SIZE                   0x0070
+#define LRE_STATS_DMEM_SIZE                   0x0088
 #define DEBUG_COUNTER_DMEM_SIZE               0x0050
 
 #define DUPLICATE_HOST_TABLE_SIZE_INIT         0x00800004  /* N = 128, M = 4 */
@@ -86,6 +85,8 @@
 
 #define LRE_DUPLICATE_DISCARD                  (LRE_START + 104)
 #define LRE_TRANSPARENT_RECEPTION              (LRE_START + 108)
+
+#define LRE_CNT_NODES                          (LRE_START + 52)
 
 /* SRAM
  * VLAN filter defines & offsets
@@ -163,7 +164,30 @@
 #define MULTICAST_FILTER_HOST_RCV_ALLOWED               0x01
 #define MULTICAST_FILTER_HOST_RCV_NOT_ALLOWED           0x00
 
-#define NODE_TABLE_NEW			  0x3000
+/* Node table offsets are different for AM3/4 vs AM57/K2G, set by firmware */
+#define V1_0_HASH_MASK                 0x3F
+#define V1_0_INDEX_ARRAY_NT            0x10
+#define V1_0_BIN_ARRAY                 0x1A00
+#define V1_0_NODE_TABLE_NEW            0x1FC0
+#define V1_0_INDEX_ARRAY_LOC           PRUETH_MEM_DRAM0
+#define V1_0_BIN_ARRAY_LOC             PRUETH_MEM_DRAM0
+#define V1_0_NODE_TABLE_LOC            PRUETH_MEM_SHARED_RAM
+#define V1_0_INDEX_TBL_MAX_ENTRIES     64
+#define V1_0_BIN_TBL_MAX_ENTRIES       128
+#define V1_0_NODE_TBL_MAX_ENTRIES      128
+
+#define V2_1_HASH_MASK                 0xFF
+#define V2_1_INDEX_ARRAY_NT            0x3000
+#define V2_1_BIN_ARRAY \
+	(V2_1_INDEX_ARRAY_NT + (V2_1_INDEX_TBL_MAX_ENTRIES * 6))
+#define V2_1_NODE_TABLE_NEW \
+	(V2_1_BIN_ARRAY + (V2_1_BIN_TBL_MAX_ENTRIES * 8))
+#define V2_1_INDEX_ARRAY_LOC           PRUETH_MEM_SHARED_RAM
+#define V2_1_BIN_ARRAY_LOC             PRUETH_MEM_SHARED_RAM
+#define V2_1_NODE_TABLE_LOC            PRUETH_MEM_SHARED_RAM
+#define V2_1_INDEX_TBL_MAX_ENTRIES     256
+#define V2_1_BIN_TBL_MAX_ENTRIES       256
+#define V2_1_NODE_TBL_MAX_ENTRIES      256
 
 #define NT_REM_NODE_TYPE_MASK     0x1F
 #define NT_REM_NODE_TYPE_SHIFT    0x00

@@ -17,9 +17,9 @@
 #include "prueth_node_tbl.h"
 #include "hsr_prp_firmware.h"
 
-#define IND_BINOFS(x) nt->index_tbl[x].bin_offset
-#define IND_BIN_NO(x) nt->index_tbl[x].bin_no_entries
-#define BIN_NODEOFS(x) nt->bin_tbl[x].node_tbl_offset
+#define IND_BINOFS(x) nt->index_array->index_tbl[x].bin_offset
+#define IND_BIN_NO(x) nt->index_array->index_tbl[x].bin_no_entries
+#define BIN_NODEOFS(x) nt->bin_array->bin_tbl[x].node_tbl_offset
 
 static void pru2host_mac(u8 *mac)
 {
@@ -28,13 +28,14 @@ static void pru2host_mac(u8 *mac)
 	swap(mac[4], mac[5]);
 }
 
-static u16 get_hash(u8 *mac)
+static u16 get_hash(u8 *mac, u16 hash_mask)
 {
 	int j;
 	u16 hash;
 
 	for (j = 0, hash = 0; j < ETHER_ADDR_LEN; j++)
 		hash ^= mac[j];
+	hash = hash & hash_mask;
 
 	return hash;
 }
@@ -42,16 +43,16 @@ static u16 get_hash(u8 *mac)
 void pru_spin_lock(struct node_tbl *nt)
 {
 	while (1) {
-		nt->arm_lock = 1;
-		if (!nt->fw_lock)
+		nt->nt_info->arm_lock = 1;
+		if (!nt->nt_info->fw_lock)
 			break;
-		nt->arm_lock = 0;
+		nt->nt_info->arm_lock = 0;
 	}
 }
 
 static inline void pru_spin_unlock(struct node_tbl *nt)
 {
-	nt->arm_lock = 0;
+	nt->nt_info->arm_lock = 0;
 }
 
 int node_table_insert(struct prueth *prueth, u8 *mac, int port, int sv_frame,
@@ -89,10 +90,12 @@ int node_table_insert(struct prueth *prueth, u8 *mac, int port, int sv_frame,
 
 static inline bool node_expired(struct node_tbl *nt, u16 node, u16 forget_time)
 {
-	return ((nt->node_tbl[node].time_last_seen_s > forget_time ||
-		 nt->node_tbl[node].status & NT_REM_NODE_TYPE_SANAB) &&
-		nt->node_tbl[node].time_last_seen_a > forget_time &&
-		nt->node_tbl[node].time_last_seen_b > forget_time);
+	struct node_tbl_t nt_node = nt->nt_array->node_tbl[node];
+
+	return ((nt_node.time_last_seen_s > forget_time ||
+		 nt_node.status & NT_REM_NODE_TYPE_SANAB) &&
+		 nt_node.time_last_seen_a > forget_time &&
+		 nt_node.time_last_seen_b > forget_time);
 }
 
 void node_table_init(struct prueth *prueth)
@@ -101,16 +104,43 @@ void node_table_init(struct prueth *prueth)
 	struct node_tbl *nt = prueth->nt;
 	struct nt_queue_t *q = prueth->mac_queue;
 
-	memset(nt, 0, sizeof(struct node_tbl));
+	const struct prueth_fw_offsets *fw_offsets = prueth->fw_offsets;
 
-	for (j = 0; j < INDEX_TBL_MAX_ENTRIES; j++)
-		IND_BINOFS(j) = BIN_TBL_MAX_ENTRIES;
+	nt->nt_array = prueth->mem[fw_offsets->nt_array_loc].va +
+		       fw_offsets->nt_array_offset;
+	memset(nt->nt_array, 0, sizeof(struct node_tbl_t) *
+				fw_offsets->nt_array_max_entries);
 
-	for (j = 0; j < BIN_TBL_MAX_ENTRIES; j++)
-		BIN_NODEOFS(j) = NODE_TBL_MAX_ENTRIES;
+	nt->bin_array = prueth->mem[fw_offsets->bin_array_loc].va +
+			fw_offsets->bin_array_offset;
+	memset(nt->bin_array, 0, sizeof(struct bin_tbl_t) *
+				 fw_offsets->bin_array_max_entries);
 
-	for (j = 0; j < NODE_TBL_MAX_ENTRIES; j++)
-		nt->node_tbl[j].entry_state = NODE_FREE;
+	nt->index_array = prueth->mem[fw_offsets->index_array_loc].va +
+			  fw_offsets->index_array_offset;
+	memset(nt->index_array, 0, sizeof(struct node_index_tbl_t) *
+				   fw_offsets->index_array_max_entries);
+
+	nt->nt_info = prueth->mem[fw_offsets->nt_array_loc].va +
+		      fw_offsets->nt_array_offset +
+		      (sizeof(struct node_tbl_t) *
+		       fw_offsets->nt_array_max_entries);
+	memset(nt->nt_info, 0, sizeof(struct node_tbl_info_t));
+
+	nt->nt_lre_cnt = prueth->mem[PRUETH_MEM_SHARED_RAM].va + LRE_CNT_NODES;
+	memset(nt->nt_lre_cnt, 0, sizeof(struct node_tbl_lre_cnt_t));
+
+	nt->nt_array_max_entries = fw_offsets->nt_array_max_entries;
+	nt->bin_array_max_entries = fw_offsets->bin_array_max_entries;
+	nt->index_array_max_entries = fw_offsets->index_array_max_entries;
+	nt->hash_mask = fw_offsets->hash_mask;
+
+	for (j = 0; j < fw_offsets->index_array_max_entries; j++)
+		IND_BINOFS(j) = fw_offsets->bin_array_max_entries;
+	for (j = 0; j < fw_offsets->bin_array_max_entries; j++)
+		BIN_NODEOFS(j) = fw_offsets->nt_array_max_entries;
+	for (j = 0; j < fw_offsets->nt_array_max_entries; j++)
+		nt->nt_array->node_tbl[j].entry_state = NODE_FREE;
 
 	q->rd_ind = 0;
 	q->wr_ind = 0;
@@ -121,8 +151,8 @@ static u16 find_free_bin(struct node_tbl *nt)
 {
 	u16 j;
 
-	for (j = 0; j < BIN_TBL_MAX_ENTRIES; j++)
-		if (BIN_NODEOFS(j) == NODE_TBL_MAX_ENTRIES)
+	for (j = 0; j < nt->bin_array_max_entries; j++)
+		if (BIN_NODEOFS(j) == nt->nt_array_max_entries)
 			break;
 
 	return j;
@@ -133,15 +163,15 @@ static u16 next_free_slot_update(struct node_tbl *nt)
 {
 	int j;
 
-	nt->next_free_slot = NODE_TBL_MAX_ENTRIES;
-	for (j = 0; j < NODE_TBL_MAX_ENTRIES; j++) {
-		if (nt->node_tbl[j].entry_state == NODE_FREE) {
-			nt->next_free_slot = j;
+	nt->nt_info->next_free_slot = nt->nt_array_max_entries;
+	for (j = 0; j < nt->nt_array_max_entries; j++) {
+		if (nt->nt_array->node_tbl[j].entry_state == NODE_FREE) {
+			nt->nt_info->next_free_slot = j;
 			break;
 		}
 	}
 
-	return nt->next_free_slot;
+	return nt->nt_info->next_free_slot;
 }
 
 static void inc_time(u16 *t)
@@ -155,16 +185,19 @@ void node_table_update_time(struct node_tbl *nt)
 {
 	int j;
 	u16 ofs;
+	struct nt_array_t *nt_arr = nt->nt_array;
+	struct node_tbl_t node;
 
-	for (j = 0; j < BIN_TBL_MAX_ENTRIES; j++) {
-		ofs = nt->bin_tbl[j].node_tbl_offset;
-		if (ofs < NODE_TBL_MAX_ENTRIES) {
-			inc_time(&nt->node_tbl[ofs].time_last_seen_a);
-			inc_time(&nt->node_tbl[ofs].time_last_seen_b);
+	for (j = 0; j < nt->bin_array_max_entries; j++) {
+		ofs = nt->bin_array->bin_tbl[j].node_tbl_offset;
+		if (ofs < nt->nt_array_max_entries) {
+			node = nt_arr->node_tbl[ofs];
+			inc_time(&node.time_last_seen_a);
+			inc_time(&node.time_last_seen_b);
 			/* increment time_last_seen_s if nod is not SAN */
-			if ((nt->node_tbl[ofs].status & NT_REM_NODE_TYPE_SANAB)
-			    == 0)
-				inc_time(&nt->node_tbl[ofs].time_last_seen_s);
+			if ((node.status &
+			     NT_REM_NODE_TYPE_SANAB) == 0)
+				inc_time(&node.time_last_seen_s);
 		}
 	}
 }
@@ -172,23 +205,23 @@ void node_table_update_time(struct node_tbl *nt)
 static void write2node_slot(struct node_tbl *nt, u16 node, int port,
 			    int sv_frame, int proto)
 {
-	memset(&nt->node_tbl[node], 0, sizeof(struct node_tbl_t));
-	nt->node_tbl[node].entry_state = NODE_TAKEN;
+	memset(&nt->nt_array->node_tbl[node], 0, sizeof(struct node_tbl_t));
+	nt->nt_array->node_tbl[node].entry_state = NODE_TAKEN;
 
 	if (port == 0x01) {
-		nt->node_tbl[node].status = NT_REM_NODE_TYPE_SANA;
-		nt->node_tbl[node].cnt_ra = 1;
+		nt->nt_array->node_tbl[node].status = NT_REM_NODE_TYPE_SANA;
+		nt->nt_array->node_tbl[node].cnt_ra = 1;
 		if (sv_frame)
-			nt->node_tbl[node].cnt_rx_sup_a = 1;
+			nt->nt_array->node_tbl[node].cnt_rx_sup_a = 1;
 	} else {
-		nt->node_tbl[node].status = NT_REM_NODE_TYPE_SANB;
-		nt->node_tbl[node].cnt_rb = 1;
+		nt->nt_array->node_tbl[node].status = NT_REM_NODE_TYPE_SANB;
+		nt->nt_array->node_tbl[node].cnt_rb = 1;
 		if (sv_frame)
-			nt->node_tbl[node].cnt_rx_sup_b = 1;
+			nt->nt_array->node_tbl[node].cnt_rx_sup_b = 1;
 	}
 
 	if (sv_frame) {
-		nt->node_tbl[node].status = (proto == RED_PROTO_PRP) ?
+		nt->nt_array->node_tbl[node].status = (proto == RED_PROTO_PRP) ?
 			NT_REM_NODE_TYPE_DAN :
 			NT_REM_NODE_TYPE_DAN | NT_REM_NODE_HSR_BIT;
 	}
@@ -201,7 +234,8 @@ static void update_indexes(u16 start, u16 end, struct node_tbl *nt)
 
 	hash_prev = 0xffff; /* invalid hash */
 	for (; start <= end; start++) {
-		hash = get_hash(nt->bin_tbl[start].src_mac_id);
+		hash = get_hash(nt->bin_array->bin_tbl[start].src_mac_id,
+				nt->hash_mask);
 		if (hash != hash_prev)
 			IND_BINOFS(hash) = start;
 		hash_prev = hash;
@@ -217,10 +251,11 @@ static void move_up(u16 start, u16 end, struct node_tbl *nt,
 	pru_spin_lock(nt);
 
 	for (; j < start; j++)
-		memcpy(&nt->bin_tbl[j], &nt->bin_tbl[j + 1],
+		memcpy(&nt->bin_array->bin_tbl[j],
+		       &nt->bin_array->bin_tbl[j + 1],
 		       sizeof(struct bin_tbl_t));
 
-	BIN_NODEOFS(start) = NODE_TBL_MAX_ENTRIES;
+	BIN_NODEOFS(start) = nt->nt_array_max_entries;
 
 	if (update)
 		update_indexes(end, start + 1, nt);
@@ -237,10 +272,12 @@ static void move_down(u16 start, u16 end, struct node_tbl *nt,
 	pru_spin_lock(nt);
 
 	for (; j > start; j--)
-		memcpy(&nt->bin_tbl[j], &nt->bin_tbl[j - 1],
+		memcpy(&nt->bin_array->bin_tbl[j],
+		       &nt->bin_array->bin_tbl[j - 1],
 		       sizeof(struct bin_tbl_t));
 
-	nt->bin_tbl[start].node_tbl_offset = NODE_TBL_MAX_ENTRIES;
+	nt->bin_array->bin_tbl[start].node_tbl_offset =
+					nt->nt_array_max_entries;
 
 	if (update)
 		update_indexes(start + 1, end, nt);
@@ -264,20 +301,20 @@ static int node_table_insert_from_queue(struct node_tbl *nt,
 	memcpy(macid, entry->mac, ETHER_ADDR_LEN);
 	pru2host_mac(macid);
 
-	hash = get_hash(macid);
+	hash = get_hash(macid, nt->hash_mask);
 
 	not_found = 1;
 	if (IND_BIN_NO(hash) == 0) {
 		/* there is no bin for this hash, create one */
 		index = find_free_bin(nt);
-		if (index == BIN_TBL_MAX_ENTRIES)
+		if (index == nt->bin_array_max_entries)
 			return RED_ERR;
 
 		IND_BINOFS(hash) = index;
 	} else {
 		for (index = IND_BINOFS(hash);
 		     index < IND_BINOFS(hash) + IND_BIN_NO(hash); index++) {
-			if ((memcmp(nt->bin_tbl[index].src_mac_id,
+			if ((memcmp(nt->bin_array->bin_tbl[index].src_mac_id,
 				    macid, ETHER_ADDR_LEN) == 0)) {
 				not_found = 0;
 				break;
@@ -296,7 +333,7 @@ static int node_table_insert_from_queue(struct node_tbl *nt,
 		 * So, be don't have to take care about fixing IND_BINOFS()
 		 * on return RED_ERR
 		 */
-		if (free_node >= NODE_TBL_MAX_ENTRIES)
+		if (free_node >= nt->nt_array_max_entries)
 			return RED_ERR;
 
 		/* if we are here, we have at least one empty slot in the bin
@@ -307,20 +344,21 @@ static int node_table_insert_from_queue(struct node_tbl *nt,
 
 		/* look for an empty slot downwards */
 		for (empty_slot = index;
-		     (BIN_NODEOFS(empty_slot) != NODE_TBL_MAX_ENTRIES) &&
-		     (empty_slot < NODE_TBL_MAX_ENTRIES);
+		     (BIN_NODEOFS(empty_slot) != nt->nt_array_max_entries) &&
+		     (empty_slot < nt->nt_array_max_entries);
 		     empty_slot++)
 			;
 
 		/* if emptySlot != maxNodes => empty slot is found,
 		 * else no space available downwards, look upwards
 		 */
-		if (empty_slot != NODE_TBL_MAX_ENTRIES) {
+		if (empty_slot != nt->nt_array_max_entries) {
 			move_down(index, empty_slot, nt, true);
 		} else {
 			for (empty_slot = index - 1;
-			     (BIN_NODEOFS(empty_slot) != NODE_TBL_MAX_ENTRIES)
-			     && (empty_slot > 0);
+			     (BIN_NODEOFS(empty_slot) !=
+			     nt->nt_array_max_entries) &&
+			     (empty_slot > 0);
 			     empty_slot--)
 				;
 			/* we're sure to get a space here as nodetable
@@ -332,11 +370,12 @@ static int node_table_insert_from_queue(struct node_tbl *nt,
 
 		/* space created, now populate the values*/
 		BIN_NODEOFS(index) = free_node;
-		memcpy(nt->bin_tbl[index].src_mac_id, macid, ETHER_ADDR_LEN);
+		memcpy(nt->bin_array->bin_tbl[index].src_mac_id, macid,
+		       ETHER_ADDR_LEN);
 		write2node_slot(nt, free_node, entry->port_id, entry->sv_frame,
 				entry->proto);
 
-		nt->lre_cnt++;
+		nt->nt_lre_cnt->lre_cnt++;
 	}
 
 	return RED_OK;
@@ -349,13 +388,14 @@ void node_table_check_and_remove(struct node_tbl *nt, u16 forget_time)
 	u16 hash;
 
 	/*loop to remove a node reaching NODE_FORGET_TIME*/
-	for (j = 0; j < BIN_TBL_MAX_ENTRIES; j++) {
+	for (j = 0; j < nt->bin_array_max_entries; j++) {
 		node = BIN_NODEOFS(j);
-		if (node >= NODE_TBL_MAX_ENTRIES)
+		if (node >= nt->nt_array_max_entries)
 			continue;
 
 		if (node_expired(nt, node, forget_time)) {
-			hash = get_hash(nt->bin_tbl[j].src_mac_id);
+			hash = get_hash(nt->bin_array->bin_tbl[j].src_mac_id,
+					nt->hash_mask);
 
 			/* remove entry from bin array */
 			end_bin = IND_BINOFS(hash) + IND_BIN_NO(hash) - 1;
@@ -364,12 +404,12 @@ void node_table_check_and_remove(struct node_tbl *nt, u16 forget_time)
 			(IND_BIN_NO(hash))--;
 
 			if (!IND_BIN_NO(hash))
-				IND_BINOFS(hash) = BIN_TBL_MAX_ENTRIES;
+				IND_BINOFS(hash) = nt->bin_array_max_entries;
 
-			nt->node_tbl[node].entry_state = NODE_FREE;
-			BIN_NODEOFS(end_bin) = NODE_TBL_MAX_ENTRIES;
+			nt->nt_array->node_tbl[node].entry_state = NODE_FREE;
+			BIN_NODEOFS(end_bin) = nt->nt_array_max_entries;
 
-			nt->lre_cnt--;
+			nt->nt_lre_cnt->lre_cnt--;
 		}
 	}
 }
@@ -416,8 +456,8 @@ prueth_nt_index_show(struct seq_file *sfp, void *data)
 	int cnt_i = 0;
 	int cnt_b = 0;
 
-	for (j = 0; j < INDEX_TBL_MAX_ENTRIES; j++)
-		if ((IND_BINOFS(j) < BIN_TBL_MAX_ENTRIES) &&
+	for (j = 0; j < nt->index_array_max_entries; j++)
+		if ((IND_BINOFS(j) < nt->bin_array_max_entries) &&
 		    (IND_BIN_NO(j) > 0)) {
 			seq_printf(sfp, "%3d; ofs %3d; no %3d\n", j,
 				   IND_BINOFS(j), IND_BIN_NO(j));
@@ -426,7 +466,7 @@ prueth_nt_index_show(struct seq_file *sfp, void *data)
 		}
 
 	seq_printf(sfp, "\nTotal indexes %d; bins %d;  lre_cnt %d\n",
-		   cnt_i, cnt_b, nt->lre_cnt);
+		   cnt_i, cnt_b, nt->nt_lre_cnt->lre_cnt);
 
 	return 0;
 }
@@ -454,29 +494,30 @@ prueth_nt_bins_show(struct seq_file *sfp, void *data)
 	int j, o;
 	int cnt = 0;
 
-	for (j = 0; j < BIN_TBL_MAX_ENTRIES; j++)
-		if (nt->bin_tbl[j].node_tbl_offset < NODE_TBL_MAX_ENTRIES) {
-			o = nt->bin_tbl[j].node_tbl_offset;
+	for (j = 0; j < nt->bin_array_max_entries; j++)
+		if (nt->bin_array->bin_tbl[j].node_tbl_offset <
+		    nt->nt_array_max_entries) {
+			o = nt->bin_array->bin_tbl[j].node_tbl_offset;
 			seq_printf(sfp, "%3d; ofs %3d; %02x-%02x-%02x-%02x-%02x-%02x %02x %02x ra %4d; rb %4d; s%5d; a%5d; b%5d\n",
-				   j, nt->bin_tbl[j].node_tbl_offset,
-				   nt->bin_tbl[j].src_mac_id[3],
-				   nt->bin_tbl[j].src_mac_id[2],
-				   nt->bin_tbl[j].src_mac_id[1],
-				   nt->bin_tbl[j].src_mac_id[0],
-				   nt->bin_tbl[j].src_mac_id[5],
-				   nt->bin_tbl[j].src_mac_id[4],
-				   nt->node_tbl[o].entry_state,
-				   nt->node_tbl[o].status,
-				   nt->node_tbl[o].cnt_ra,
-				   nt->node_tbl[o].cnt_rb,
-				   nt->node_tbl[o].time_last_seen_s,
-				   nt->node_tbl[o].time_last_seen_a,
-				   nt->node_tbl[o].time_last_seen_b
+				   j, nt->bin_array->bin_tbl[j].node_tbl_offset,
+				   nt->bin_array->bin_tbl[j].src_mac_id[3],
+				   nt->bin_array->bin_tbl[j].src_mac_id[2],
+				   nt->bin_array->bin_tbl[j].src_mac_id[1],
+				   nt->bin_array->bin_tbl[j].src_mac_id[0],
+				   nt->bin_array->bin_tbl[j].src_mac_id[5],
+				   nt->bin_array->bin_tbl[j].src_mac_id[4],
+				   nt->nt_array->node_tbl[o].entry_state,
+				   nt->nt_array->node_tbl[o].status,
+				   nt->nt_array->node_tbl[o].cnt_ra,
+				   nt->nt_array->node_tbl[o].cnt_rb,
+				   nt->nt_array->node_tbl[o].time_last_seen_s,
+				   nt->nt_array->node_tbl[o].time_last_seen_a,
+				   nt->nt_array->node_tbl[o].time_last_seen_b
 				   );
 			cnt++;
 		}
 	seq_printf(sfp, "\nTotal valid entries %d; lre_cnt %d\n",
-		   cnt, nt->lre_cnt);
+		   cnt, nt->nt_lre_cnt->lre_cnt);
 
 	return 0;
 }

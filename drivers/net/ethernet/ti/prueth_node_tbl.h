@@ -62,18 +62,40 @@ struct node_tbl_t {
 	u16 time_last_seen_b;
 } __packed;
 
-struct node_tbl {
-	struct node_index_tbl_t index_tbl[INDEX_TBL_MAX_ENTRIES];
-	struct bin_tbl_t	bin_tbl[BIN_TBL_MAX_ENTRIES];
-	struct node_tbl_t	node_tbl[NODE_TBL_MAX_ENTRIES];
-	u16 next_free_slot;
+struct node_tbl_lre_cnt_t {
 	u16 lre_cnt;
+} __packed;
+
+struct node_tbl_info_t {
+	u32 next_free_slot;
 	u8  arm_lock;
 	u8  res;
 	u16 fw_lock; /* firmware use this field as 2 independent bytes
 		      * first byte for PRU0, second for PRU1
 		      */
 } __packed;
+
+struct nt_array_t {
+	struct node_tbl_t	node_tbl[NODE_TBL_MAX_ENTRIES];
+} __packed;
+struct index_array_t {
+	struct node_index_tbl_t index_tbl[INDEX_TBL_MAX_ENTRIES];
+} __packed;
+struct bin_array_t {
+	struct bin_tbl_t	bin_tbl[BIN_TBL_MAX_ENTRIES];
+} __packed;
+
+struct node_tbl {
+	struct bin_array_t *bin_array;
+	struct index_array_t *index_array;
+	struct nt_array_t *nt_array;
+	struct node_tbl_info_t *nt_info;
+	struct node_tbl_lre_cnt_t *nt_lre_cnt;
+	u32 index_array_max_entries;
+	u32 bin_array_max_entries;
+	u32 nt_array_max_entries;
+	u16 hash_mask;
+};
 
 /* NT queue definitions */
 struct nt_queue_entry {

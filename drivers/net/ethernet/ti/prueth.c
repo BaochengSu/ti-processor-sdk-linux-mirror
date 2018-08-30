@@ -95,6 +95,32 @@ static char *pruss2_mc_mask = PRUETH_DEFAULT_MC_MASK;
 module_param(pruss2_mc_mask, charp, 0444);
 MODULE_PARM_DESC(pruss2_mc_mask, "Choose pruss2 MC mask");
 
+const struct prueth_fw_offsets fw_offsets_v1_0 = {
+	.hash_mask = V1_0_HASH_MASK,
+	.index_array_offset = V1_0_INDEX_ARRAY_NT,
+	.bin_array_offset = V1_0_BIN_ARRAY,
+	.nt_array_offset = V1_0_NODE_TABLE_NEW,
+	.index_array_loc = V1_0_INDEX_ARRAY_LOC,
+	.bin_array_loc = V1_0_BIN_ARRAY_LOC,
+	.nt_array_loc = V1_0_NODE_TABLE_LOC,
+	.index_array_max_entries = V1_0_INDEX_TBL_MAX_ENTRIES,
+	.bin_array_max_entries = V1_0_BIN_TBL_MAX_ENTRIES,
+	.nt_array_max_entries = V1_0_NODE_TBL_MAX_ENTRIES
+};
+
+const struct prueth_fw_offsets fw_offsets_v2_1 = {
+	.hash_mask = V2_1_HASH_MASK,
+	.index_array_offset = V2_1_INDEX_ARRAY_NT,
+	.bin_array_offset = V2_1_BIN_ARRAY,
+	.nt_array_offset = V2_1_NODE_TABLE_NEW,
+	.index_array_loc = V2_1_INDEX_ARRAY_LOC,
+	.bin_array_loc = V2_1_BIN_ARRAY_LOC,
+	.nt_array_loc = V2_1_NODE_TABLE_LOC,
+	.index_array_max_entries = V2_1_INDEX_TBL_MAX_ENTRIES,
+	.bin_array_max_entries = V2_1_BIN_TBL_MAX_ENTRIES,
+	.nt_array_max_entries = V2_1_NODE_TBL_MAX_ENTRIES
+};
+
 #define IEP_GLOBAL_CFG_REG_MASK      0xfffff
 #define IEP_GLOBAL_CFG_REG_PTP_VAL      0x111
 #define IEP_GLOBAL_CFG_REG_DEF_VAL      0x551
@@ -1164,7 +1190,6 @@ static void nt_updater(struct kthread_work *work)
 
 static int prueth_hsr_prp_node_table_init(struct prueth *prueth)
 {
-	prueth->nt = prueth->mem[PRUETH_MEM_SHARED_RAM].va + NODE_TABLE_NEW;
 	node_table_init(prueth);
 	spin_lock_init(&prueth->nt_lock);
 	kthread_init_work(&prueth->nt_work, nt_updater);
@@ -1197,10 +1222,8 @@ static int prueth_hsr_prp_lre_init(struct prueth *prueth)
 {
 	void __iomem *sram = prueth->mem[PRUETH_MEM_SHARED_RAM].va;
 
-	if (PRUETH_HAS_HSR(prueth))
-		memset_io(sram + LRE_START, 0, LRE_STATS_DMEM_SIZE_HSR);
-	else
-		memset_io(sram + LRE_START, 0, LRE_STATS_DMEM_SIZE);
+	memset_io(sram + LRE_START, 0, LRE_STATS_DMEM_SIZE);
+
 	writel(IEC62439_CONST_DUPLICATE_DISCARD,
 	       sram + LRE_DUPLICATE_DISCARD);
 	writel(IEC62439_CONST_TRANSPARENT_RECEPTION_REMOVE_RCT,
@@ -1789,7 +1812,7 @@ static int emac_rx_packet(struct prueth_emac *emac, u16 *bd_rd_ptr,
 		memcpy(dst_addr, src_addr, actual_pkt_len);
 	}
 
-	if (PRUETH_HAS_RED(prueth) && !pkt_info.lookup_success) {
+	if (PRUETH_HAS_RED(prueth)) {
 		if (PRUETH_HAS_PRP(prueth) && !emac->prp_emac_mode) {
 			memcpy(macid,
 			       ((pkt_info.sv_frame) ? nt_dst_addr + 20 :
@@ -2796,7 +2819,6 @@ static int emac_ndo_open(struct net_device *ndev)
 	 * sizes are fundamental to the remaining configuration
 	 * calculations.
 	 */
-	prueth->nt = prueth->mem[PRUETH_MEM_SHARED_RAM].va + NODE_TABLE_NEW;
 
 	if (!prueth->emac_configured) {
 		if (PRUETH_HAS_HSR(prueth))
@@ -2831,7 +2853,9 @@ static int emac_ndo_open(struct net_device *ndev)
 		if (PRUETH_HAS_RED(prueth)) {
 			prueth->mac_queue = kmalloc(sizeof(struct nt_queue_t),
 						    GFP_KERNEL);
-			if (!prueth->mac_queue) {
+			prueth->nt = kmalloc(sizeof(*prueth->nt),
+					     GFP_KERNEL);
+			if (!prueth->mac_queue || !prueth->nt) {
 				ret = -ENOMEM;
 				goto free_ptp_irq;
 			}
@@ -2977,6 +3001,8 @@ static int sw_emac_pru_stop(struct prueth_emac *emac, struct net_device *ndev)
 		prueth->tbl_check_period = 0;
 		kfree(prueth->mac_queue);
 		prueth->mac_queue = NULL;
+		kfree(prueth->nt);
+		prueth->nt = NULL;
 		/* Disable VLAN filter */
 		writeb(VLAN_FLTR_DIS, sram + VLAN_FLTR_CTRL_BYTE);
 	}
@@ -3952,11 +3978,13 @@ static int prueth_netdev_init(struct prueth *prueth,
 		goto free;
 	}
 
-	emac->ptp_tx_irq = of_irq_get_byname(eth_node, "ptp_tx");
-	if (emac->ptp_tx_irq < 0) {
-		ret = emac->ptp_tx_irq;
-		if (ret != -EPROBE_DEFER)
-			dev_info(prueth->dev, "could not get ptp tx irq\n");
+	if (PRUETH_HAS_PTP(prueth)) {
+		emac->ptp_tx_irq = of_irq_get_byname(eth_node, "ptp_tx");
+		if (emac->ptp_tx_irq < 0) {
+			ret = emac->ptp_tx_irq;
+			if (ret != -EPROBE_DEFER)
+				dev_info(prueth->dev, "could not get ptp tx irq\n");
+		}
 	}
 
 	emac->msg_enable = netif_msg_init(debug_level, PRUETH_EMAC_DEBUG);
@@ -4100,6 +4128,11 @@ static int prueth_probe(struct platform_device *pdev)
 	prueth->dev = dev;
 	prueth->fw_data = match->data;
 	prueth->prueth_np = np;
+
+	if (prueth->fw_data->fw_rev == FW_REV_V1_0)
+		prueth->fw_offsets = &fw_offsets_v1_0;
+	else
+		prueth->fw_offsets = &fw_offsets_v2_1;
 
 	eth0_node = of_get_child_by_name(np, "ethernet-mii0");
 	if (!of_device_is_available(eth0_node)) {
@@ -4467,12 +4500,21 @@ static struct prueth_private_data am335x_prueth_pdata = {
 	.driver_data = PRUSS_AM3359,
 	.fw_pru[PRUSS_PRU0] = {
 		.fw_name[PRUSS_ETHTYPE_EMAC] =
-			"ti-pruss/am335x-pru0-prueth-fw.elf"
+			"ti-pruss/am335x-pru0-prueth-fw.elf",
+		.fw_name[PRUSS_ETHTYPE_HSR] =
+			"ti-pruss/am335x-pru0-pruhsr-fw.elf",
+		.fw_name[PRUSS_ETHTYPE_PRP] =
+			"ti-pruss/am335x-pru0-pruprp-fw.elf"
 	},
 	.fw_pru[PRUSS_PRU1] = {
 		.fw_name[PRUSS_ETHTYPE_EMAC] =
-			"ti-pruss/am335x-pru1-prueth-fw.elf"
-	}
+			"ti-pruss/am335x-pru1-prueth-fw.elf",
+		.fw_name[PRUSS_ETHTYPE_HSR] =
+			"ti-pruss/am335x-pru1-pruhsr-fw.elf",
+		.fw_name[PRUSS_ETHTYPE_PRP] =
+			"ti-pruss/am335x-pru1-pruprp-fw.elf"
+	},
+	.fw_rev = FW_REV_V1_0
 };
 
 /* AM437x SoC-specific firmware data */
@@ -4480,12 +4522,21 @@ static struct prueth_private_data am437x_prueth_pdata = {
 	.driver_data = PRUSS_AM4376,
 	.fw_pru[PRUSS_PRU0] = {
 		.fw_name[PRUSS_ETHTYPE_EMAC] =
-			"ti-pruss/am437x-pru0-prueth-fw.elf"
+			"ti-pruss/am437x-pru0-prueth-fw.elf",
+		.fw_name[PRUSS_ETHTYPE_HSR] =
+			"ti-pruss/am437x-pru0-pruhsr-fw.elf",
+		.fw_name[PRUSS_ETHTYPE_PRP] =
+			"ti-pruss/am437x-pru0-pruprp-fw.elf"
 	},
 	.fw_pru[PRUSS_PRU1] = {
 		.fw_name[PRUSS_ETHTYPE_EMAC] =
-			"ti-pruss/am437x-pru1-prueth-fw.elf"
-	}
+			"ti-pruss/am437x-pru1-prueth-fw.elf",
+		.fw_name[PRUSS_ETHTYPE_HSR] =
+			"ti-pruss/am437x-pru1-pruhsr-fw.elf",
+		.fw_name[PRUSS_ETHTYPE_PRP] =
+			"ti-pruss/am437x-pru1-pruprp-fw.elf"
+	},
+	.fw_rev = FW_REV_V1_0
 };
 
 /* AM57xx SoC-specific firmware data */
@@ -4506,7 +4557,9 @@ static struct prueth_private_data am57xx_prueth_pdata = {
 			"ti-pruss/am57xx-pru1-pruhsr-fw.elf",
 		.fw_name[PRUSS_ETHTYPE_PRP] =
 			"ti-pruss/am57xx-pru1-pruprp-fw.elf",
-	}
+	},
+	.fw_rev = FW_REV_V2_1,
+	.ptp_support = 1
 };
 
 /* 66AK2G SoC-specific firmware data */
@@ -4514,12 +4567,21 @@ static struct prueth_private_data k2g_prueth_pdata = {
 	.driver_data = PRUSS_K2G,
 	.fw_pru[PRUSS_PRU0] = {
 		.fw_name[PRUSS_ETHTYPE_EMAC] =
-			"ti-pruss/k2g-pru0-prueth-fw.elf"
+			"ti-pruss/k2g-pru0-prueth-fw.elf",
+		.fw_name[PRUSS_ETHTYPE_HSR] =
+			"ti-pruss/k2g-pru0-pruhsr-fw.elf",
+		.fw_name[PRUSS_ETHTYPE_PRP] =
+			"ti-pruss/k2g-pru0-pruprp-fw.elf"
 	},
 	.fw_pru[PRUSS_PRU1] = {
 		.fw_name[PRUSS_ETHTYPE_EMAC] =
-			"ti-pruss/k2g-pru1-prueth-fw.elf"
-	}
+			"ti-pruss/k2g-pru1-prueth-fw.elf",
+		.fw_name[PRUSS_ETHTYPE_HSR] =
+			"ti-pruss/k2g-pru1-pruhsr-fw.elf",
+		.fw_name[PRUSS_ETHTYPE_PRP] =
+			"ti-pruss/k2g-pru1-pruprp-fw.elf"
+	},
+	.fw_rev = FW_REV_V2_1
 };
 
 static const struct of_device_id prueth_dt_match[] = {

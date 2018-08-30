@@ -185,14 +185,14 @@ static void prueth_hsr_prp_node_show(struct seq_file *sfp,
 				     struct prueth *prueth, int index)
 {
 	struct node_tbl *nt = prueth->nt;
-	struct bin_tbl_t *bin = &nt->bin_tbl[index];
+	struct bin_tbl_t *bin = &nt->bin_array->bin_tbl[index];
 	struct node_tbl_t *node;
 	u8 val, is_hsr;
 
-	if (WARN_ON(bin->node_tbl_offset >= NODE_TBL_MAX_ENTRIES))
+	if (WARN_ON(bin->node_tbl_offset >= nt->nt_array_max_entries))
 		return;
 
-	node = &nt->node_tbl[bin->node_tbl_offset];
+	node = &nt->nt_array->node_tbl[bin->node_tbl_offset];
 
 	seq_printf(sfp, "\nNode[%u]:\n", index);
 	seq_printf(sfp, "MAC ADDR: %02x:%02x:%02x:%02x:%02x:%02x\n",
@@ -274,11 +274,13 @@ prueth_hsr_prp_node_table_show(struct seq_file *sfp, void *data)
 	int j;
 	u32 nodes;
 
-	nodes = nt->lre_cnt;
-	seq_printf(sfp, "\nRemote nodes in network: %u\n", nt->lre_cnt);
+	nodes = nt->nt_lre_cnt->lre_cnt;
+	seq_printf(sfp, "\nRemote nodes in network: %u\n",
+		   nt->nt_lre_cnt->lre_cnt);
 
-	for (j = 0; j < BIN_TBL_MAX_ENTRIES; j++) {
-		if (nt->bin_tbl[j].node_tbl_offset < NODE_TBL_MAX_ENTRIES)
+	for (j = 0; j < nt->bin_array_max_entries; j++) {
+		if (nt->bin_array->bin_tbl[j].node_tbl_offset <
+		    nt->nt_array_max_entries)
 			prueth_hsr_prp_node_show(sfp, prueth, j);
 	}
 
@@ -786,6 +788,8 @@ int prueth_hsr_prp_debugfs_init(struct prueth *prueth)
 	char dir[32];
 
 	memset(dir, 0, sizeof(dir));
+	if (prueth->fw_data->driver_data == PRUSS_AM3359)
+		id = 1;
 	if (prueth->fw_data->driver_data == PRUSS_AM57XX)
 		id -= 1;
 
