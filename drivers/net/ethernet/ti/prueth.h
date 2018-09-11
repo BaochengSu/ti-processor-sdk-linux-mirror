@@ -520,7 +520,10 @@ struct prueth_emac {
 #ifdef	CONFIG_DEBUG_FS
 	struct dentry *root_dir;
 	struct dentry *stats_file;
-	struct dentry *prp_emac_mode_file;
+#endif
+#ifdef CONFIG_SYSFS
+	struct device_attribute nsp_credit_attr;
+	struct device_attribute prp_emac_mode_attr;
 #endif
 	int ptp_tx_enable;
 	int ptp_rx_enable;
@@ -612,6 +615,7 @@ struct prueth {
 	unsigned int emac_configured;
 	unsigned int tbl_check_period;
 	unsigned int node_table_clear;
+	unsigned int node_table_clear_last_cmd;
 	unsigned int tbl_check_mask;
 	struct hrtimer tbl_check_timer;
 	struct prueth_mmap_port_cfg_basis mmap_port_cfg_basis[PRUETH_PORT_MAX];
@@ -630,11 +634,7 @@ struct prueth {
 	struct dentry *node_tbl_file;
 	struct dentry *mc_filter_file;
 	struct dentry *vlan_filter_file;
-	struct dentry *nt_clear_file;
-	struct dentry *hsr_mode_file;
-	struct dentry *dlrmt_file;
-	struct dentry *dd_file;
-	struct dentry *tr_file;
+	struct dentry *lre_cfg_file;
 	struct dentry *error_stats_file;
 	struct dentry *nt_index;
 	struct dentry *nt_bins;
@@ -647,6 +647,16 @@ struct prueth {
 	spinlock_t	nt_lock;
 };
 
+#ifdef CONFIG_SYSFS
 int prueth_sysfs_init(struct prueth_emac *emac);
 void prueth_remove_sysfs_entries(struct prueth_emac *emac);
+#else
+static inline int prueth_sysfs_init(struct prueth_emac *emac)
+{
+	return 0;
+}
+
+static inline void prueth_remove_sysfs_entries(struct prueth_emac *emac)
+{}
+#endif
 #endif /* __NET_TI_PRUETH_H */

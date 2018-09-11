@@ -68,67 +68,6 @@ static const struct file_operations prueth_emac_stats_fops = {
 	.release = single_release,
 };
 
-/* prueth_prp_emac_mode_write - write the user provided value to
- * prp emac_mode debugfs file
- */
-static ssize_t
-prueth_prp_emac_mode_write(struct file *file, const char __user *user_buf,
-			   size_t count, loff_t *ppos)
-{
-	struct prueth_emac *emac =
-			((struct seq_file *)(file->private_data))->private;
-	unsigned long emac_mode;
-	int err;
-
-	err = kstrtoul_from_user(user_buf, count, 0, &emac_mode);
-	if (err)
-		return err;
-
-	if (emac_mode > PRUETH_TX_PRP_EMAC_MODE)
-		return -EINVAL;
-
-	emac->prp_emac_mode = emac_mode;
-
-	return count;
-}
-
-/* prueth_prp_emac_mode_show - print the current emac mode flag
- * in firmware. Applicable only for PRP device.
- */
-static int
-prueth_prp_emac_mode_show(struct seq_file *sfp, void *data)
-{
-	struct prueth_emac *emac = (struct prueth_emac *)sfp->private;
-
-	seq_printf(sfp, "%u\n", emac->prp_emac_mode);
-
-	return 0;
-}
-
-/* prueth_prp_emac_mode_open:- Open the PRP emac mode file
- *
- * Description:
- * This routine opens a debugfs file.prp_emac_mode file to
- * configure PRP firmware in emac mode. This is used when PTP
- * SAN is to be configured. User set the mode to 1 to indicate
- * EMAC mode
- */
-static int
-prueth_prp_emac_mode_open(struct inode *inode, struct file *filp)
-{
-	return single_open(filp, prueth_prp_emac_mode_show,
-			   inode->i_private);
-}
-
-static const struct file_operations prueth_prp_emac_mode_fops = {
-	.owner	= THIS_MODULE,
-	.open	= prueth_prp_emac_mode_open,
-	.read	= seq_read,
-	.write	= prueth_prp_emac_mode_write,
-	.llseek = seq_lseek,
-	.release = single_release,
-};
-
 /* prueth_debugfs_init - create  debugfs file for displaying queue stats
  *
  * Description:
@@ -164,19 +103,6 @@ int prueth_debugfs_init(struct prueth_emac *emac)
 	}
 
 	emac->stats_file = de;
-
-	if (PRUETH_HAS_PRP(emac->prueth)) {
-		de = debugfs_create_file("prp_emac_mode", 0644,
-					 emac->root_dir, emac,
-					 &prueth_prp_emac_mode_fops);
-
-		if (!de) {
-			netdev_err(emac->ndev,
-				   "Cannot create prp emac mode file\n");
-			return rc;
-		}
-		emac->prp_emac_mode_file = de;
-	}
 
 	return 0;
 }
@@ -424,313 +350,60 @@ static const struct file_operations prueth_hsr_prp_mc_filter_fops = {
 	.release = single_release,
 };
 
-/* prueth_hsr_prp_nt_clear_write - write the user provided value to
- * node_table_clear debugfs file
- */
-static ssize_t
-prueth_hsr_prp_nt_clear_write(struct file *file, const char __user *user_buf,
-			      size_t count, loff_t *ppos)
-{
-	struct prueth *prueth =
-		((struct seq_file *)(file->private_data))->private;
-	unsigned long clear;
-	int err;
-
-	err = kstrtoul_from_user(user_buf, count, 0, &clear);
-	if (err)
-		return err;
-
-	if (clear)
-		prueth->node_table_clear = 1;
-	else
-		prueth->node_table_clear = 0;
-
-	return count;
-}
-
-/* prueth_hsr_prp_nt_clear_show - print the value of node_table_clear
- * debugfs file
+/* prueth_lre_config_show - print the configuration parameters at
+ * the lre device
  */
 static int
-prueth_hsr_prp_nt_clear_show(struct seq_file *sfp, void *data)
-{
-	struct prueth *prueth = (struct prueth *)sfp->private;
-	void __iomem *dram1 = prueth->mem[PRUETH_MEM_DRAM1].va;
-	u32 check = readl(dram1 + HOST_TIMER_CHECK_FLAGS);
-
-	seq_printf(sfp, "%lu\n",
-		   check & HOST_TIMER_NODE_TABLE_CLEAR_BIT);
-
-	return 0;
-}
-
-/* prueth_hsr_prp_nt_clear_open - Open the node_table clear debugfs file
- *
- * Description:
- * This routine opens a debugfs file node_table of specific hsr
- * or prp device
- */
-static int
-prueth_hsr_prp_nt_clear_open(struct inode *inode, struct file *filp)
-{
-	return single_open(filp, prueth_hsr_prp_nt_clear_show,
-			   inode->i_private);
-}
-
-static const struct file_operations prueth_hsr_prp_nt_clear_fops = {
-	.owner	= THIS_MODULE,
-	.open	= prueth_hsr_prp_nt_clear_open,
-	.read	= seq_read,
-	.write	= prueth_hsr_prp_nt_clear_write,
-	.llseek = seq_lseek,
-	.release = single_release,
-};
-
-/* prueth_hsr_mode_show - print the value of hsr_mode debugfs file
- * for hsr device
- */
-static int
-prueth_hsr_mode_show(struct seq_file *sfp, void *data)
+prueth_lre_config_show(struct seq_file *sfp, void *data)
 {
 	struct prueth *prueth = (struct prueth *)sfp->private;
 	void __iomem *dram0 = prueth->mem[PRUETH_MEM_DRAM0].va;
-	u32 mode = readl(dram0 + LRE_HSR_MODE);
-
-	seq_printf(sfp, "%u\n", mode);
-
-	return 0;
-}
-
-/* prueth_hsr_mode_write - write the user provided value to
- * hsr_mode debugfs file
- */
-static ssize_t
-prueth_hsr_mode_write(struct file *file, const char __user *user_buf,
-		      size_t count, loff_t *ppos)
-{
-	struct prueth *prueth =
-			((struct seq_file *)(file->private_data))->private;
-	void __iomem *dram0 = prueth->mem[PRUETH_MEM_DRAM0].va;
-	unsigned long mode;
-	int err;
-
-	err = kstrtoul_from_user(user_buf, count, 0, &mode);
-	if (err)
-		return err;
-
-	if ((mode < MODEH) || (mode > MODEM))
-		return -EINVAL;
-
-	prueth->hsr_mode = mode;
-	writel(mode, dram0 + LRE_HSR_MODE);
-
-	return count;
-}
-
-/* prueth_hsr_mode_open - Open the prueth_hsr_mode_open debugfs file
- *
- * Description:
- * This routine opens a debugfs file hsr_mode for hsr device
- */
-static int
-prueth_hsr_mode_open(struct inode *inode, struct file *filp)
-{
-	return single_open(filp, prueth_hsr_mode_show,
-			   inode->i_private);
-}
-
-static const struct file_operations prueth_hsr_mode_fops = {
-	.owner	= THIS_MODULE,
-	.open	= prueth_hsr_mode_open,
-	.read	= seq_read,
-	.write	= prueth_hsr_mode_write,
-	.llseek = seq_lseek,
-	.release = single_release,
-};
-
-/* prueth_hsr_prp_dlrmt_write - write the user provided value to
- * dup_list_reside_max_time debugfs file
- */
-static ssize_t
-prueth_hsr_prp_dlrmt_write(struct file *file, const char __user *user_buf,
-			   size_t count, loff_t *ppos)
-{
-	struct prueth *prueth =
-			((struct seq_file *)(file->private_data))->private;
 	void __iomem *dram1 = prueth->mem[PRUETH_MEM_DRAM1].va;
-	unsigned int forget_time;
-	int err;
+	void __iomem *sram = prueth->mem[PRUETH_MEM_SHARED_RAM].va;
+	int hsr = 0;
+	u32 val;
 
-	err = kstrtouint_from_user(user_buf, count, 0, &forget_time);
-	if (err)
-		return err;
+	if (PRUETH_HAS_HSR(prueth))
+		hsr = 1;
 
-	/* input time is in msec. Firmware expects in unit of 10 msec */
-	forget_time /= 10;
-	writel(forget_time, dram1 + DUPLI_FORGET_TIME);
+	seq_printf(sfp, "Protocol is %s\n", hsr == 1 ? "HSR" : "PRP");
+	if (hsr) {
+		val = readl(dram0 + LRE_HSR_MODE);
+		seq_printf(sfp, "mode %u\n", val);
+	}
 
-	return count;
-}
-
-/* prueth_hsr_prp_nt_clear_show - Formats and prints node_table entries
- */
-static int
-prueth_hsr_prp_dlrmt_show(struct seq_file *sfp, void *data)
-{
-	struct prueth *prueth = (struct prueth *)sfp->private;
-	void __iomem *dram1 = prueth->mem[PRUETH_MEM_DRAM1].va;
-	u32 forget_time = readl(dram1 + DUPLI_FORGET_TIME);
-
-	/* input time is in msec. Firmware expects in unit of 10 msec */
-	forget_time *= 10;
-	seq_printf(sfp, "%u\n", forget_time);
+	val = readl(dram1 + DUPLI_FORGET_TIME);
+	seq_printf(sfp, "Duplicate List Maximum reside time  %u\n", val * 10);
+	val = readl(sram + LRE_DUPLICATE_DISCARD);
+	seq_printf(sfp, "Duplicate Discard%u\n", val);
+	if (!hsr) {
+		val = readl(sram + LRE_TRANSPARENT_RECEPTION);
+		seq_printf(sfp, "PRP Tranparent Reception%u\n", val);
+	}
+	seq_printf(sfp, "Last clear node table command%u\n",
+		   prueth->node_table_clear_last_cmd);
+	seq_puts(sfp, "\n");
 
 	return 0;
 }
 
-/* prueth_hsr_prp_nt_clear_open - Open the node_table clear file
+/* prueth_lre_config_open - Open the lre config debugfs file
  *
  * Description:
- * This routine opens a debugfs file node_table of specific hsr
- * or prp device
+ * This routine opens a debugfs file lre_config file to view
+ * the configuration parameters at the offloaded lre device.
  */
 static int
-prueth_hsr_prp_dlrmt_open(struct inode *inode, struct file *filp)
+prueth_lre_config_open(struct inode *inode, struct file *filp)
 {
-	return single_open(filp, prueth_hsr_prp_dlrmt_show,
+	return single_open(filp, prueth_lre_config_show,
 			   inode->i_private);
 }
 
-static const struct file_operations prueth_hsr_prp_dlrmt_fops = {
+static const struct file_operations prueth_lre_config_fops = {
 	.owner	= THIS_MODULE,
-	.open	= prueth_hsr_prp_dlrmt_open,
+	.open	= prueth_lre_config_open,
 	.read	= seq_read,
-	.write	= prueth_hsr_prp_dlrmt_write,
-	.llseek = seq_lseek,
-	.release = single_release,
-};
-
-/* prueth_hsr_prp_dd_write - write the user provided value to
- * duplicate_discard debugfs file
- */
-static ssize_t
-prueth_hsr_prp_dd_write(struct file *file, const char __user *user_buf,
-			size_t count, loff_t *ppos)
-{
-	struct prueth *prueth =
-			((struct seq_file *)(file->private_data))->private;
-	void __iomem *sram = prueth->mem[PRUETH_MEM_SHARED_RAM].va;
-	unsigned long dd;
-	int err;
-
-	err = kstrtoul_from_user(user_buf, count, 0, &dd);
-	if (err)
-		return err;
-
-	if ((dd != IEC62439_CONST_DUPLICATE_DISCARD) &&
-	    (dd != IEC62439_CONST_DUPLICATE_ACCEPT))
-		return -EINVAL;
-
-	writel(dd, sram + LRE_DUPLICATE_DISCARD);
-
-	return count;
-}
-
-/* prueth_hsr_prp_dd_show - prints duplicate_discard debugfs file value
- */
-static int
-prueth_hsr_prp_dd_show(struct seq_file *sfp, void *data)
-{
-	struct prueth *prueth = (struct prueth *)sfp->private;
-	void __iomem *sram = prueth->mem[PRUETH_MEM_SHARED_RAM].va;
-	u32 dd = readl(sram + LRE_DUPLICATE_DISCARD);
-
-	seq_printf(sfp, "%u\n", dd);
-
-	return 0;
-}
-
-/* prueth_hsr_prp_dd_open - Open the duplicate_discard debugfs file
- *
- * Description:
- * This routine opens a debugfs file duplicate_discard for hsr or
- * prp device
- */
-static int
-prueth_hsr_prp_dd_open(struct inode *inode, struct file *filp)
-{
-	return single_open(filp, prueth_hsr_prp_dd_show,
-			   inode->i_private);
-}
-
-static const struct file_operations prueth_hsr_prp_dd_fops = {
-	.owner	= THIS_MODULE,
-	.open	= prueth_hsr_prp_dd_open,
-	.read	= seq_read,
-	.write	= prueth_hsr_prp_dd_write,
-	.llseek = seq_lseek,
-	.release = single_release,
-};
-
-/* prueth_prp_tr_write - write the user provided value to
- * transparent_reception debugfs file
- */
-static ssize_t
-prueth_prp_tr_write(struct file *file, const char __user *user_buf,
-		    size_t count, loff_t *ppos)
-{
-	struct prueth *prueth =
-			((struct seq_file *)(file->private_data))->private;
-	void __iomem *sram = prueth->mem[PRUETH_MEM_SHARED_RAM].va;
-	unsigned long tr;
-	int err;
-
-	err = kstrtoul_from_user(user_buf, count, 0, &tr);
-	if (err)
-		return err;
-
-	if ((tr != IEC62439_CONST_TRANSPARENT_RECEPTION_REMOVE_RCT) &&
-	    (tr != IEC62439_CONST_TRANSPARENT_RECEPTION_PASS_RCT))
-		return -EINVAL;
-
-	writel(tr, sram + LRE_TRANSPARENT_RECEPTION);
-
-	return count;
-}
-
-/* prueth_prp_tr_show - print the current transparent_reception
- * file value for prp device.
- */
-static int
-prueth_prp_tr_show(struct seq_file *sfp, void *data)
-{
-	struct prueth *prueth = (struct prueth *)sfp->private;
-	void __iomem *sram = prueth->mem[PRUETH_MEM_SHARED_RAM].va;
-	u32 tr = readl(sram + LRE_TRANSPARENT_RECEPTION);
-
-	seq_printf(sfp, "%u\n", tr);
-
-	return 0;
-}
-
-/* prueth_prp_tr_open:- Open the transparent reception file
- *
- * Description:
- * This routine opens a debugfs file. transparent_reception
- * for prp device
- */
-static int
-prueth_prp_tr_open(struct inode *inode, struct file *filp)
-{
-	return single_open(filp, prueth_prp_tr_show,
-			   inode->i_private);
-}
-
-static const struct file_operations prueth_prp_tr_fops = {
-	.owner	= THIS_MODULE,
-	.open	= prueth_prp_tr_open,
-	.read	= seq_read,
-	.write	= prueth_prp_tr_write,
 	.llseek = seq_lseek,
 	.release = single_release,
 };
@@ -772,6 +445,29 @@ static const struct file_operations prueth_error_stats_fops = {
 	.release = single_release,
 };
 
+/* prueth_hsr_prp_debugfs_term - Tear down debugfs intrastructure
+ *
+ * Description:
+ * When Debufs is configured this routine removes debugfs file system
+ * elements that are specific to hsr-prp
+ */
+void
+prueth_hsr_prp_debugfs_term(struct prueth *prueth)
+{
+	if (prueth->emac_configured)
+		return;
+
+	debugfs_remove_recursive(prueth->root_dir);
+	prueth->node_tbl_file = NULL;
+	prueth->mc_filter_file = NULL;
+	prueth->vlan_filter_file = NULL;
+	prueth->lre_cfg_file = NULL;
+	prueth->error_stats_file = NULL;
+	prueth->root_dir = NULL;
+	prueth->nt_index = NULL;
+	prueth->nt_bins = NULL;
+}
+
 /* prueth_hsr_prp_debugfs_init - create hsr-prp node_table file for dumping
  * the node table
  *
@@ -782,27 +478,16 @@ static const struct file_operations prueth_error_stats_fops = {
 int prueth_hsr_prp_debugfs_init(struct prueth *prueth)
 {
 	struct device *dev = prueth->dev;
-	int rc = -1;
+	int rc = -ENODEV;
 	struct dentry *de = NULL;
 	int id = prueth->pruss_id;
 	char dir[32];
 
 	memset(dir, 0, sizeof(dir));
-	if (prueth->fw_data->driver_data == PRUSS_AM3359)
-		id = 1;
-	if (prueth->fw_data->driver_data == PRUSS_AM57XX)
-		id -= 1;
-
-	if (PRUETH_HAS_HSR(prueth)) {
-		if (id == 1)
-			sprintf(dir, "prueth-hsr");
-		else
-			sprintf(dir, "prueth-hsr%d", id);
-	} else if (PRUETH_HAS_PRP(prueth)) {
-		if (id == 1)
-			sprintf(dir, "prueth-prp");
-		else
-			sprintf(dir, "prueth-prp%d", id);
+	if (PRUETH_HAS_HSR(prueth))
+		sprintf(dir, "prueth-hsr-%d", id);
+	else if (PRUETH_HAS_PRP(prueth)) {
+		sprintf(dir, "prueth-prp-%d", id);
 	} else {
 		dev_err(dev, "unknown eth_type: %u\n", prueth->eth_type);
 		return -EINVAL;
@@ -821,7 +506,7 @@ int prueth_hsr_prp_debugfs_init(struct prueth *prueth)
 				 &prueth_hsr_prp_node_table_fops);
 	if (!de) {
 		dev_err(dev, "Cannot create hsr-prp node_table file\n");
-		return rc;
+		goto error;
 	}
 	prueth->node_tbl_file = de;
 
@@ -830,7 +515,7 @@ int prueth_hsr_prp_debugfs_init(struct prueth *prueth)
 				 &prueth_hsr_prp_mc_filter_fops);
 	if (!de) {
 		dev_err(dev, "Cannot create hsr-prp mc_filter file\n");
-		return rc;
+		goto error;
 	}
 	prueth->mc_filter_file = de;
 
@@ -839,65 +524,25 @@ int prueth_hsr_prp_debugfs_init(struct prueth *prueth)
 				 &prueth_hsr_prp_vlan_filter_fops);
 	if (!de) {
 		dev_err(dev, "Cannot create hsr-prp vlan_filter file\n");
-		return rc;
+		goto error;
 	}
 	prueth->vlan_filter_file = de;
 
-	de = debugfs_create_file("node_table_clear", 0644,
+	de = debugfs_create_file("lre_config", 0444,
 				 prueth->root_dir, prueth,
-				 &prueth_hsr_prp_nt_clear_fops);
+				 &prueth_lre_config_fops);
 	if (!de) {
-		dev_err(dev, "Cannot create hsr-prp node table clear file\n");
-		return rc;
+		dev_err(dev, "Cannot create lre_config file\n");
+		goto error;
 	}
-	prueth->nt_clear_file = de;
+	prueth->lre_cfg_file = de;
 
-	if (PRUETH_HAS_HSR(prueth)) {
-		de = debugfs_create_file("hsr_mode", 0644,
-					 prueth->root_dir, prueth,
-					 &prueth_hsr_mode_fops);
-		if (!de) {
-			dev_err(dev, "Cannot create hsr mode file\n");
-			return rc;
-		}
-		prueth->hsr_mode_file = de;
-	}
-
-	de = debugfs_create_file("dup_list_reside_max_time", 0644,
-				 prueth->root_dir, prueth,
-				 &prueth_hsr_prp_dlrmt_fops);
-	if (!de) {
-		dev_err(dev, "Cannot create dup_list_reside_max_time file\n");
-		return rc;
-	}
-	prueth->dlrmt_file = de;
-
-	de = debugfs_create_file("duplicate_discard", 0644,
-				 prueth->root_dir, prueth,
-				 &prueth_hsr_prp_dd_fops);
-	if (!de) {
-		dev_err(dev, "Cannot create duplicate_discard file\n");
-		return rc;
-	}
-	prueth->dd_file = de;
-
-	if (PRUETH_HAS_PRP(prueth)) {
-		de = debugfs_create_file("transparent_reception", 0644,
-					 prueth->root_dir, prueth,
-					 &prueth_prp_tr_fops);
-
-		if (!de) {
-			dev_err(dev, "Cannot create duplicate_discard file\n");
-			return rc;
-		}
-		prueth->tr_file = de;
-	}
-	de = debugfs_create_file("error_stats", 0644,
+	de = debugfs_create_file("error_stats", 0444,
 				 prueth->root_dir, prueth,
 				 &prueth_error_stats_fops);
 	if (!de) {
 		dev_err(dev, "Cannot create error_stats file\n");
-		return rc;
+		goto error;
 	}
 	prueth->error_stats_file = de;
 
@@ -906,7 +551,7 @@ int prueth_hsr_prp_debugfs_init(struct prueth *prueth)
 				 &prueth_nt_index_fops);
 	if (!de) {
 		dev_err(dev, "Cannot create nt_index file\n");
-		return rc;
+		goto error;
 	}
 	prueth->nt_index = de;
 
@@ -915,11 +560,15 @@ int prueth_hsr_prp_debugfs_init(struct prueth *prueth)
 				 &prueth_nt_bins_fops);
 	if (!de) {
 		dev_err(dev, "Cannot create nt_indexes file\n");
-		return rc;
+		goto error;
 	}
 	prueth->nt_bins = de;
 
 	return 0;
+error:
+	prueth_hsr_prp_debugfs_term(prueth);
+	return rc;
+
 }
 
 /* prueth_debugfs_term - Tear down debugfs intrastructure for emac stats
@@ -933,38 +582,7 @@ prueth_debugfs_term(struct prueth_emac *emac)
 {
 	debugfs_remove_recursive(emac->root_dir);
 	emac->stats_file = NULL;
-	emac->prp_emac_mode_file = NULL;
 	emac->root_dir = NULL;
 }
 
-/* prueth_hsr_prp_debugfs_term - Tear down debugfs intrastructure
- *
- * Description:
- * When Debufs is configured this routine removes debugfs file system
- * elements that are specific to hsr-prp
- */
-void
-prueth_hsr_prp_debugfs_term(struct prueth *prueth)
-{
-	/* Only case when this will return without doing anything
-	 * happens if this is called from emac_ndo_open for the
-	 * second device
-	 */
-	if (prueth->emac_configured)
-		return;
-
-	debugfs_remove_recursive(prueth->root_dir);
-	prueth->node_tbl_file = NULL;
-	prueth->nt_clear_file = NULL;
-	prueth->mc_filter_file = NULL;
-	prueth->vlan_filter_file = NULL;
-	prueth->hsr_mode_file = NULL;
-	prueth->dlrmt_file = NULL;
-	prueth->dd_file = NULL;
-	prueth->tr_file = NULL;
-	prueth->error_stats_file = NULL;
-	prueth->root_dir = NULL;
-	prueth->nt_index = NULL;
-	prueth->nt_bins = NULL;
-}
 #endif

@@ -12,26 +12,20 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
-
 #include <linux/netdevice.h>
 #include <linux/sysfs.h>
 #include "prueth.h"
 
-static struct attribute nsp_credit = {
-	.name = "nsp_credit",
-	.mode = 0666,
-};
+#define nsp_credit_to_emac(attr) \
+	container_of(attr, struct prueth_emac, nsp_credit_attr)
+#define prp_emac_mode_to_emac(attr) \
+	container_of(attr, struct prueth_emac, prp_emac_mode_attr)
 
-static struct attribute *nsp_credit_attrs[] = {
-	&nsp_credit,
-	NULL,
-};
-
-static ssize_t nsp_credit_store(struct kobject *kobj,
-				struct attribute *attr,
-				const char *buffer, size_t size)
+static ssize_t nsp_credit_store(struct device *dev,
+				struct device_attribute *attr,
+				const char *buffer, size_t count)
 {
-	struct prueth_emac *emac = container_of(kobj, struct prueth_emac, kobj);
+	struct prueth_emac *emac = nsp_credit_to_emac(attr);
 	u32 val;
 
 	if (!PRUETH_HAS_RED(emac->prueth))
@@ -45,38 +39,76 @@ static ssize_t nsp_credit_store(struct kobject *kobj,
 			(val << PRUETH_NSP_CREDIT_SHIFT) | PRUETH_NSP_ENABLE;
 	else
 		emac->nsp_credit = PRUETH_NSP_DISABLE;
-	return size;
+
+	return count;
 }
 
-static ssize_t nsp_credit_show(struct kobject *kobj,
-			       struct attribute *attr, char *buffer)
+static ssize_t nsp_credit_show(struct device *dev,
+			       struct device_attribute *attr,
+			       char *buffer)
 {
-	struct prueth_emac *emac = container_of(kobj, struct prueth_emac, kobj);
+	struct prueth_emac *emac = nsp_credit_to_emac(attr);
 
 	return snprintf(buffer, PAGE_SIZE, "%u\n",
 			emac->nsp_credit >> PRUETH_NSP_CREDIT_SHIFT);
 }
+DEVICE_ATTR_RW(nsp_credit);
 
-static const struct sysfs_ops nsp_credit_sysfs_ops = {
-	.show = nsp_credit_show,
-	.store = nsp_credit_store,
-};
+static ssize_t prp_emac_mode_store(struct device *dev,
+				   struct device_attribute *attr,
+				   const char *buffer, size_t count)
+{
+	struct prueth_emac *emac = prp_emac_mode_to_emac(attr);
+	u32 emac_mode;
+	int err;
 
-static struct kobj_type nsp_credit_kobj_type = {
-	.sysfs_ops = &nsp_credit_sysfs_ops,
-	.default_attrs = nsp_credit_attrs,
-};
+	err = kstrtou32(buffer, 0, &emac_mode);
+	if (err)
+		return err;
+
+	if (!PRUETH_HAS_PRP(emac->prueth))
+		return -EINVAL;
+
+	if (emac_mode > PRUETH_TX_PRP_EMAC_MODE)
+		return -EINVAL;
+
+	emac->prp_emac_mode = emac_mode;
+
+	return count;
+}
+
+static ssize_t prp_emac_mode_show(struct device *dev,
+				  struct device_attribute *attr,
+				  char *buffer)
+{
+	struct prueth_emac *emac = prp_emac_mode_to_emac(attr);
+
+	return snprintf(buffer, PAGE_SIZE, "%u\n", emac->prp_emac_mode);
+}
+DEVICE_ATTR_RW(prp_emac_mode);
 
 int prueth_sysfs_init(struct prueth_emac *emac)
 {
-	struct device *dev = emac->prueth->dev;
+	int ret;
 
-	return kobject_init_and_add(&emac->kobj,
-				    &nsp_credit_kobj_type,
-				    &dev->kobj, netdev_name(emac->ndev));
+	emac->nsp_credit_attr = dev_attr_nsp_credit;
+	sysfs_attr_init(&emac->nsp_credit_attr.attr);
+	ret = device_create_file(&emac->ndev->dev, &emac->nsp_credit_attr);
+	if (ret < 0)
+		return ret;
+
+	emac->prp_emac_mode_attr = dev_attr_prp_emac_mode;
+	sysfs_attr_init(&emac->prp_emac_mode_attr.attr);
+	ret = device_create_file(&emac->ndev->dev, &emac->prp_emac_mode_attr);
+	if (ret < 0) {
+		device_remove_file(&emac->ndev->dev, &emac->nsp_credit_attr);
+		return ret;
+	}
+	return 0;
 }
 
 void prueth_remove_sysfs_entries(struct prueth_emac *emac)
 {
-	kobject_put(&emac->kobj);
+	device_remove_file(&emac->ndev->dev, &emac->nsp_credit_attr);
+	device_remove_file(&emac->ndev->dev, &emac->prp_emac_mode_attr);
 }
