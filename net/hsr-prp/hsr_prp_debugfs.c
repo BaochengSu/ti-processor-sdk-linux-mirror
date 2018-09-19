@@ -20,34 +20,53 @@
 #include "hsr_prp_main.h"
 #include "hsr_prp_framereg.h"
 
-/* hsr_prp_stats_show - Formats and prints stats in the device
+/* hsr_prp_lre_info_show - Formats and prints debug info in the device
  */
 static int
-hsr_prp_stats_show(struct seq_file *sfp, void *data)
+hsr_prp_lre_info_show(struct seq_file *sfp, void *data)
 {
 	struct hsr_prp_priv *priv = (struct hsr_prp_priv *)sfp->private;
+	bool prp = priv->prot_ver > HSR_V1;
 
-	seq_puts(sfp, "LRE debug stats entries\n");
+	seq_puts(sfp, "LRE debug information\n");
+	seq_printf(sfp, "Protocol : %s\n", prp ? "PRP" : "HSR");
+	seq_printf(sfp, "net_id: %d\n", priv->net_id);
+	seq_printf(sfp, "Rx Offloaded: %s\n",
+		   priv->rx_offloaded ? "Yes" : "No");
+	if (!prp)
+		seq_printf(sfp, "L2 fw Offloaded: %s\n",
+			   priv->l2_fwd_offloaded ? "Yes" : "No");
+	seq_printf(sfp, "vlan tag used in sv frame : %s\n",
+		   priv->use_vlan_for_sv ? "Yes" : "No");
+	if (priv->use_vlan_for_sv) {
+		seq_printf(sfp, "SV Frame VID : %d\n",
+			   priv->sv_frame_vid);
+		seq_printf(sfp, "SV Frame PCP : %d\n",
+			   priv->sv_frame_pcp);
+		seq_printf(sfp, "SV Frame CFI : %d\n",
+			   priv->sv_frame_cfi);
+	}
 	seq_printf(sfp, "cnt_tx_sup = %d\n", priv->dbg_stats.cnt_tx_sup);
+	seq_printf(sfp, "disable SV Frame = %d\n", priv->disable_sv_frame);
 	seq_puts(sfp, "\n");
 	return 0;
 }
 
-/* hsr_prp_stats_open - open stats file
+/* hsr_prp_lre_info_open - open lre info file
  *
  * Description:
- * This routine opens a debugfs file stats of specific hsr or
+ * This routine opens a debugfs file lre_info of specific hsr or
  * prp device
  */
 static int
-hsr_prp_stats_open(struct inode *inode, struct file *filp)
+hsr_prp_lre_info_open(struct inode *inode, struct file *filp)
 {
-	return single_open(filp, hsr_prp_stats_show, inode->i_private);
+	return single_open(filp, hsr_prp_lre_info_show, inode->i_private);
 }
 
-static const struct file_operations hsr_prp_stats_fops = {
+static const struct file_operations hsr_prp_lre_info_fops = {
 	.owner	= THIS_MODULE,
-	.open	= hsr_prp_stats_open,
+	.open	= hsr_prp_lre_info_open,
 	.read	= seq_read,
 	.llseek = seq_lseek,
 	.release = single_release,
@@ -74,15 +93,15 @@ int hsr_prp_debugfs_init(struct hsr_prp_priv *priv,
 
 	priv->root_dir = de;
 
-	de = debugfs_create_file("stats", S_IFREG | 0444,
+	de = debugfs_create_file("lre_info", S_IFREG | 0444,
 				 priv->root_dir, priv,
-				 &hsr_prp_stats_fops);
+				 &hsr_prp_lre_info_fops);
 	if (!de) {
 		netdev_err(hsr_prp_dev,
-			   "Cannot create hsr-prp stats file\n");
+			   "Cannot create hsr-prp lre_info file\n");
 		return rc;
 	}
-	priv->stats_file = de;
+	priv->lre_info_file = de;
 
 	return 0;
 } /* end of hst_prp_debugfs_init */
@@ -96,8 +115,8 @@ int hsr_prp_debugfs_init(struct hsr_prp_priv *priv,
 void
 hsr_prp_debugfs_term(struct hsr_prp_priv *priv)
 {
-	debugfs_remove(priv->stats_file);
-	priv->stats_file = NULL;
+	debugfs_remove(priv->lre_info_file);
+	priv->lre_info_file = NULL;
 	debugfs_remove(priv->root_dir);
 	priv->root_dir = NULL;
 }

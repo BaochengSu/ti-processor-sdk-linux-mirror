@@ -601,6 +601,7 @@ struct prueth {
 	struct pruss_mem_region mem[PRUETH_MEM_MAX];
 	struct gen_pool *sram_pool;
 
+	int fw_drop_untagged_vlan;
 	struct device_node *eth_node[PRUETH_NUM_MACS];
 	struct device_node *prueth_np;
 	struct prueth_emac *emac[PRUETH_NUM_MACS];

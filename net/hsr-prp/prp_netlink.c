@@ -31,6 +31,9 @@ static const struct nla_policy prp_policy[IFLA_PRP_MAX + 1] = {
 	[IFLA_PRP_MULTICAST_SPEC]	= { .type = NLA_U8 },
 	[IFLA_PRP_SUPERVISION_ADDR]	= { .len = ETH_ALEN },
 	[IFLA_PRP_SEQ_NR]		= { .type = NLA_U16 },
+	[IFLA_PRP_SV_VID]		= { .type = NLA_U16 },
+	[IFLA_PRP_SV_PCP]		= { .type = NLA_U8 },
+	[IFLA_PRP_SV_CFI]		= { .type = NLA_U8 },
 };
 
 /* Here, it seems a netdevice has already been allocated for us, and the
@@ -42,6 +45,9 @@ static int prp_newlink(struct net *src_net, struct net_device *dev,
 {
 	struct net_device *link[2];
 	unsigned char multicast_spec;
+	unsigned short vid = 0;
+	unsigned char pcp = 0, cfi = 0;
+	bool sv_vlan_tag_needed = false;
 
 	if (!data) {
 		netdev_info(dev, "PRP: No slave devices specified\n");
@@ -70,7 +76,31 @@ static int prp_newlink(struct net *src_net, struct net_device *dev,
 	else
 		multicast_spec = nla_get_u8(data[IFLA_PRP_MULTICAST_SPEC]);
 
-	return hsr_prp_dev_finalize(dev, link, multicast_spec, PRP_V1);
+	if (data[IFLA_PRP_SV_VID]) {
+		sv_vlan_tag_needed = true;
+		vid = nla_get_u16(data[IFLA_PRP_SV_VID]);
+	}
+
+	if (data[IFLA_PRP_SV_PCP]) {
+		sv_vlan_tag_needed = true;
+		pcp = nla_get_u8(data[IFLA_PRP_SV_PCP]);
+	}
+
+	if (data[IFLA_PRP_SV_CFI]) {
+		sv_vlan_tag_needed = true;
+		cfi = nla_get_u8(data[IFLA_PRP_SV_CFI]);
+	}
+
+	if (sv_vlan_tag_needed &&
+	    (vid >= (VLAN_N_VID - 1) || cfi > 1 || pcp > 7)) {
+		netdev_info(dev,
+			    "PRP: wrong vlan params: vid %d, pcp %d, cfi %d\n",
+			    vid, pcp, cfi);
+		return -EINVAL;
+	}
+
+	return hsr_prp_dev_finalize(dev, link, multicast_spec, PRP_V1,
+				    sv_vlan_tag_needed, vid, pcp, cfi);
 }
 
 static int prp_fill_info(struct sk_buff *skb, const struct net_device *dev)

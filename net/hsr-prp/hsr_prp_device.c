@@ -243,6 +243,27 @@ int hsr_prp_lredev_get_node_table(struct hsr_prp_priv *priv,
 	return ret;
 }
 
+static int hsr_prp_set_sv_frame_vid(struct hsr_prp_priv *priv,
+				    u16 vid)
+{
+	struct hsr_prp_port *port_a =
+		hsr_prp_get_port(priv, HSR_PRP_PT_SLAVE_A);
+	struct net_device *slave_a_dev;
+	int ret = -EINVAL;
+
+	if (!port_a)
+		return ret;
+
+	slave_a_dev = port_a->dev;
+
+	/* TODO can we use vlan_vid_add() here?? */
+	if (slave_a_dev && slave_a_dev->lredev_ops &&
+	    slave_a_dev->lredev_ops->lredev_set_sv_vlan_id)
+		slave_a_dev->lredev_ops->lredev_set_sv_vlan_id(slave_a_dev,
+							       vid);
+	return 0;
+}
+
 int hsr_prp_lredev_get_lre_stats(struct hsr_prp_priv *priv,
 				 struct lre_stats *stats)
 {
@@ -398,41 +419,69 @@ static void send_supervision_frame(struct hsr_prp_port *master,
 	struct sk_buff *skb;
 	int hlen, tlen;
 	struct hsr_tag *hsr_tag;
+	struct vlan_hdr *vhdr;
 	struct prp_rct *rct;
 	struct hsr_prp_sup_tag *hsr_stag;
 	struct hsr_prp_sup_payload *hsr_sp;
+	struct hsr_prp_priv *priv;
 	unsigned long irqflags;
-	u16 proto;
+	u16 proto, vlan_tci = 0;
 	u8 *tail;
+	int len;
 
+	priv = master->priv;
 	hlen = LL_RESERVED_SPACE(master->dev);
 	tlen = master->dev->needed_tailroom;
+	len = sizeof(struct hsr_tag) +
+	      sizeof(struct hsr_prp_sup_tag) +
+	      sizeof(struct hsr_prp_sup_payload) + hlen + tlen;
+
+	if (priv->use_vlan_for_sv)
+		len += VLAN_HLEN;
+
 	/* skb size is same for PRP/HSR frames, only difference
 	 * being for PRP, it is a trailor and for HSR it is a
 	 * header
 	 */
-	skb = dev_alloc_skb(
-			sizeof(struct hsr_tag) +
-			sizeof(struct hsr_prp_sup_tag) +
-			sizeof(struct hsr_prp_sup_payload) + hlen + tlen);
+	skb = dev_alloc_skb(len);
 	if (!skb)
 		return;
 
 	skb_reserve(skb, hlen);
-	if (!prot_ver)
-		proto = ETH_P_PRP;
-	else
-		proto = (prot_ver == HSR_V1) ? ETH_P_HSR : ETH_P_PRP;
-	skb->dev = master->dev;
+	if (priv->use_vlan_for_sv) {
+		proto = ETH_P_8021Q;
+		skb->priority = priv->sv_frame_pcp;
+	} else {
+		if (!prot_ver)
+			proto = ETH_P_PRP;
+		else
+			proto = (prot_ver == HSR_V1) ? ETH_P_HSR : ETH_P_PRP;
+		skb->priority = TC_PRIO_CONTROL;
+	}
 	skb->protocol = htons(proto);
-	skb->priority = TC_PRIO_CONTROL;
+	skb->dev = master->dev;
 
 	if (dev_hard_header(skb, skb->dev, proto,
-			    master->priv->sup_multicast_addr,
+			    priv->sup_multicast_addr,
 			    skb->dev->dev_addr, skb->len) <= 0)
 		goto out;
 	skb_reset_mac_header(skb);
 	skb_reset_network_header(skb);
+
+	if (priv->use_vlan_for_sv) {
+		vhdr = skb_put(skb, VLAN_HLEN);
+		vlan_tci = priv->sv_frame_vid;
+		vlan_tci |= (priv->sv_frame_pcp	<< VLAN_PRIO_SHIFT);
+		if (priv->sv_frame_cfi)
+			vlan_tci |= VLAN_CFI_MASK;
+		if (!prot_ver)
+			proto = ETH_P_PRP;
+		else
+			proto = (prot_ver == HSR_V1) ? ETH_P_HSR : ETH_P_PRP;
+		vhdr->h_vlan_TCI = htons(vlan_tci);
+		vhdr->h_vlan_encapsulated_proto = htons(proto);
+	}
+
 	if (prot_ver == HSR_V1) {
 		hsr_tag = skb_put(skb, sizeof(struct hsr_tag));
 		hsr_tag->encap_proto = htons(ETH_P_PRP);
@@ -449,14 +498,14 @@ static void send_supervision_frame(struct hsr_prp_port *master,
 		hsr_stag->sequence_nr = htons(master->priv->sup_sequence_nr);
 		master->priv->sup_sequence_nr++;
 		if (prot_ver == HSR_V1) {
-			hsr_tag->sequence_nr = htons(master->priv->sequence_nr);
-			master->priv->sequence_nr++;
+			hsr_tag->sequence_nr = htons(priv->sequence_nr);
+			priv->sequence_nr++;
 		}
 	} else {
-		hsr_stag->sequence_nr = htons(master->priv->sequence_nr);
-		master->priv->sequence_nr++;
+		hsr_stag->sequence_nr = htons(priv->sequence_nr);
+		priv->sequence_nr++;
 	}
-	spin_unlock_irqrestore(&master->priv->seqnr_lock, irqflags);
+	spin_unlock_irqrestore(&priv->seqnr_lock, irqflags);
 
 	hsr_stag->HSR_TLV_type = type;
 	/* TODO: Why 12 in HSRv0? */
@@ -467,21 +516,27 @@ static void send_supervision_frame(struct hsr_prp_port *master,
 	hsr_sp = skb_put(skb, sizeof(struct hsr_prp_sup_payload));
 	ether_addr_copy(hsr_sp->mac_address_a, master->dev->dev_addr);
 
-	if (skb_put_padto(skb, ETH_ZLEN + HSR_PRP_HLEN))
-		return;
+	if (!priv->use_vlan_for_sv) {
+		if (skb_put_padto(skb, ETH_ZLEN + HSR_PRP_HLEN))
+			return;
+	} else {
+		if (skb_put_padto(skb, ETH_ZLEN + HSR_PRP_HLEN + VLAN_HLEN))
+			return;
+	}
 
-	spin_lock_irqsave(&master->priv->seqnr_lock, irqflags);
+	spin_lock_irqsave(&priv->seqnr_lock, irqflags);
 	if (prot_ver == PRP_V1) {
 		tail = skb_tail_pointer(skb) - HSR_PRP_HLEN;
 		rct = (struct prp_rct *)tail;
 		rct->PRP_suffix = htons(ETH_P_PRP);
 		set_prp_LSDU_size(rct, HSR_PRP_V1_SUP_LSDUSIZE);
-		rct->sequence_nr = htons(master->priv->sequence_nr);
-		master->priv->sequence_nr++;
+		rct->sequence_nr = htons(priv->sequence_nr);
+		priv->sequence_nr++;
 	}
-	spin_unlock_irqrestore(&master->priv->seqnr_lock, irqflags);
+	spin_unlock_irqrestore(&priv->seqnr_lock, irqflags);
+
 	hsr_prp_forward_skb(skb, master);
-	INC_CNT_TX_SUP(master->priv);
+	INC_CNT_TX_SUP(priv);
 	return;
 
 out:
@@ -817,7 +872,9 @@ static const unsigned char def_multicast_addr[ETH_ALEN] __aligned(2) = {
 
 int hsr_prp_dev_finalize(struct net_device *hsr_prp_dev,
 			 struct net_device *slave[2],
-			 unsigned char multicast_spec, u8 protocol_version)
+			 unsigned char multicast_spec, u8 protocol_version,
+			 bool sv_vlan_tag_needed, unsigned short vid,
+			 unsigned char pcp, unsigned char cfi)
 {
 	netdev_features_t mask =
 		NETIF_F_HW_PRP_RX_OFFLOAD | NETIF_F_HW_HSR_RX_OFFLOAD;
@@ -865,6 +922,11 @@ int hsr_prp_dev_finalize(struct net_device *hsr_prp_dev,
 
 	ether_addr_copy(priv->sup_multicast_addr, def_multicast_addr);
 	priv->sup_multicast_addr[ETH_ALEN - 1] = multicast_spec;
+	/* update vlan tag infor for SV frames */
+	priv->use_vlan_for_sv = sv_vlan_tag_needed;
+	priv->sv_frame_vid = vid;
+	priv->sv_frame_cfi = cfi;
+	priv->sv_frame_pcp = pcp;
 
 	/* FIXME: should I modify the value of these?
 	 *
@@ -947,6 +1009,12 @@ int hsr_prp_dev_finalize(struct net_device *hsr_prp_dev,
 		goto fail;
 
 	res = hsr_prp_debugfs_init(priv, hsr_prp_dev);
+	if (res)
+		goto fail_procfs;
+
+	if (priv->use_vlan_for_sv)
+		res = hsr_prp_set_sv_frame_vid(priv, priv->sv_frame_vid);
+
 	if (res)
 		goto fail_procfs;
 

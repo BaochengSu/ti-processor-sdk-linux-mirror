@@ -26,8 +26,12 @@ prueth_queue_stats_show(struct seq_file *sfp, void *data)
 {
 	struct prueth_emac *emac = (struct prueth_emac *)sfp->private;
 
-	seq_printf(sfp,
-		   "   TxQ-0    TxQ-1    TxQ-2    TxQ-3    ");
+	if (!PRUETH_HAS_RED(emac->prueth))
+		seq_printf(sfp,
+			   "   TxQ-0    TxQ-1    TxQ-2    TxQ-3    ");
+	else
+		seq_printf(sfp,
+			   "   TxQ-2    TxQ-3    ");
 	if (emac->port_id == PRUETH_PORT_MII0)
 		seq_printf(sfp,
 			   "RxQ-0    RxQ-1\n");
@@ -37,13 +41,20 @@ prueth_queue_stats_show(struct seq_file *sfp, void *data)
 	seq_printf(sfp,
 		   "=====================================================\n");
 
-	seq_printf(sfp, "%8d %8d %8d %8d %8d %8d\n",
-		   emac->tx_packet_counts[PRUETH_QUEUE1],
-		   emac->tx_packet_counts[PRUETH_QUEUE2],
-		   emac->tx_packet_counts[PRUETH_QUEUE3],
-		   emac->tx_packet_counts[PRUETH_QUEUE4],
-		   emac->rx_packet_counts[PRUETH_QUEUE1],
-		   emac->rx_packet_counts[PRUETH_QUEUE2]);
+	if (!PRUETH_HAS_RED(emac->prueth))
+		seq_printf(sfp, "%8d %8d %8d %8d %8d %8d\n",
+			   emac->tx_packet_counts[PRUETH_QUEUE1],
+			   emac->tx_packet_counts[PRUETH_QUEUE2],
+			   emac->tx_packet_counts[PRUETH_QUEUE3],
+			   emac->tx_packet_counts[PRUETH_QUEUE4],
+			   emac->rx_packet_counts[PRUETH_QUEUE1],
+			   emac->rx_packet_counts[PRUETH_QUEUE2]);
+	else
+		seq_printf(sfp, "%8d %8d %8d %8d\n",
+			   emac->tx_packet_counts[PRUETH_QUEUE3],
+			   emac->tx_packet_counts[PRUETH_QUEUE4],
+			   emac->rx_packet_counts[PRUETH_QUEUE1],
+			   emac->rx_packet_counts[PRUETH_QUEUE2]);
 
 	return 0;
 }
@@ -249,6 +260,14 @@ prueth_hsr_prp_vlan_filter_show(struct seq_file *sfp, void *data)
 	seq_printf(sfp, "VLAN Filter : %s",
 		   val & BIT(VLAN_FLTR_CTRL_SHIFT) ?
 			 "enabled\n" : "disabled\n");
+	if (val & BIT(VLAN_FLTR_CTRL_SHIFT)) {
+		seq_printf(sfp, "VLAN Filter untagged : %s",
+			   val & BIT(VLAN_FLTR_UNTAG_HOST_RCV_CTRL_SHIFT) ?
+			   "not allowed to Host\n" : "allowed to Host\n");
+		seq_printf(sfp, "VLAN Filter priority tagged: %s",
+			   val & BIT(VLAN_FLTR_PRIOTAG_HOST_RCV_CTRL_SHIFT) ?
+			   "not allowed to Host\n" : "allowed to Host\n");
+	}
 	if (val) {
 		for (i = 0; i < VLAN_FLTR_TBL_SIZE; i++) {
 			val = readb(sram + VLAN_FLTR_TBL_BASE_ADDR + i);

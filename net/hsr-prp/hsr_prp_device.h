@@ -18,7 +18,9 @@
 void hsr_dev_setup(struct net_device *dev);
 void prp_dev_setup(struct net_device *dev);
 int hsr_prp_dev_finalize(struct net_device *dev, struct net_device *slave[2],
-			 unsigned char multicast_spec, u8 protocol_version);
+			 unsigned char multicast_spec, u8 protocol_version,
+			 bool sv_vlan_tag_needed, unsigned short vid,
+			 unsigned char pcp, unsigned char cfi);
 void hsr_prp_check_carrier_and_operstate(struct hsr_prp_priv *priv);
 bool is_hsr_prp_master(struct net_device *dev);
 int hsr_prp_get_max_mtu(struct hsr_prp_priv *priv);

@@ -78,9 +78,12 @@ static inline int is_hsr_l2ptp_evt(struct sk_buff *skb)
  */
 static bool is_supervision_frame(struct hsr_prp_priv *priv, struct sk_buff *skb)
 {
-	struct ethhdr *eth_hdr;
+	struct hsrv1_ethhdr_vlan_sp *hsr_v1_vlan_hdr;
 	struct hsr_prp_sup_tag *hsr_sup_tag;
 	struct hsrv1_ethhdr_sp *hsr_v1_hdr;
+	struct ethhdr *eth_hdr;
+	bool vlan = false;
+	u16 proto;
 
 	WARN_ON_ONCE(!skb_mac_header_was_set(skb));
 	eth_hdr = (struct ethhdr *)skb_mac_header(skb);
@@ -90,21 +93,39 @@ static bool is_supervision_frame(struct hsr_prp_priv *priv, struct sk_buff *skb)
 			      priv->sup_multicast_addr))
 		return false;
 
+	if (skb_vlan_tagged(skb)) {
+		proto = vlan_get_protocol(skb);
+		vlan = true;
+	} else {
+		proto = eth_hdr->h_proto;
+	}
+
 	/* Correct ether type?. */
-	if (!(eth_hdr->h_proto == htons(ETH_P_PRP) ||
-	      eth_hdr->h_proto == htons(ETH_P_HSR)))
+	if (!(proto == htons(ETH_P_PRP) || proto == htons(ETH_P_HSR)))
 		return false;
 
 	/* Get the supervision header from correct location. */
-	if (eth_hdr->h_proto == htons(ETH_P_HSR)) { /* Okay HSRv1. */
-		hsr_v1_hdr = (struct hsrv1_ethhdr_sp *)skb_mac_header(skb);
-		if (hsr_v1_hdr->hsr.encap_proto != htons(ETH_P_PRP))
-			return false;
-
-		hsr_sup_tag = &hsr_v1_hdr->hsr_sup;
+	if (proto == htons(ETH_P_HSR)) { /* Okay HSRv1. */
+		if (!vlan) {
+			hsr_v1_hdr = (struct hsrv1_ethhdr_sp *)eth_hdr;
+			if (hsr_v1_hdr->hsr.encap_proto != htons(ETH_P_PRP))
+				return false;
+			hsr_sup_tag = &hsr_v1_hdr->hsr_sup;
+		} else {
+			hsr_v1_vlan_hdr =
+				(struct hsrv1_ethhdr_vlan_sp *)eth_hdr;
+			if (hsr_v1_vlan_hdr->hsr.encap_proto !=
+						htons(ETH_P_PRP))
+				return false;
+			hsr_sup_tag = &hsr_v1_vlan_hdr->hsr_sup;
+		}
 	} else {
-		hsr_sup_tag = &((struct hsrv0_ethhdr_sp *)
-				skb_mac_header(skb))->hsr_sup;
+		if (!vlan)
+			hsr_sup_tag =
+			&((struct hsrv0_ethhdr_sp *)eth_hdr)->hsr_sup;
+		else
+			hsr_sup_tag =
+			&((struct hsrv0_ethhdr_vlan_sp *)eth_hdr)->hsr_sup;
 	}
 
 	if (hsr_sup_tag->HSR_TLV_type != HSR_TLV_ANNOUNCE &&
@@ -366,9 +387,23 @@ static struct sk_buff *frame_get_tagged_skb(struct hsr_prp_frame_info *frame,
 					    struct hsr_prp_port *port)
 {
 	if (frame->skb_hsr) {
+		u8 *pc;
 		struct hsr_ethhdr *hsr_ethhdr =
 			(struct hsr_ethhdr *)skb_mac_header(frame->skb_hsr);
 
+		/* This case is for SV frame created by this device */
+		pc = (u8 *)hsr_ethhdr;
+		if (frame->is_vlan)
+			/* This 4-byte shift (size of a vlan tag) does not
+			 * mean that the ethhdr starts there. But rather it
+			 * provides the proper environment for accessing
+			 * the fields, such as hsr_tag etc., just like
+			 * when the vlan tag is not there. This is because
+			 * the hsr tag is after the vlan tag.
+			 */
+			hsr_ethhdr = (struct hsr_ethhdr *)(pc + VLAN_HLEN);
+		else
+			hsr_ethhdr = (struct hsr_ethhdr *)pc;
 		/* set the lane id properly */
 		hsr_set_lan_id(hsr_ethhdr, port);
 		return skb_clone(frame->skb_hsr, GFP_ATOMIC);
