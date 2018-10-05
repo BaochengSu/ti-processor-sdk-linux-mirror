@@ -744,19 +744,15 @@
 				icssg0_mem: memories@0 {
 					reg = <0x0 0x2000>,
 					      <0x2000 0x2000>,
-					      <0x10000 0x10000>;
+					      <0x10000 0x10000>,
+					       <0x2e000 0x1000>;
 					reg-names = "dram0", "dram1",
-						    "shrdram2";
+						    "shrdram2", "iep";
 				};
 
 				icssg0_cfg: cfg@26000 {
 					compatible = "syscon";
 					reg = <0x26000 0x200>;
-				};
-
-				icssg0_iep: iep@2e000 {
-					compatible = "syscon";
-					reg = <0x2e000 0x1000>;
 				};
 
 				icssg0_mii_rt: mii_rt@32000 {
@@ -864,19 +860,15 @@
 				icssg1_mem: memories@0 {
 					reg = <0x0 0x2000>,
 					      <0x2000 0x2000>,
-					      <0x10000 0x10000>;
+					      <0x10000 0x10000>,
+					      <0x2e000 0x1000>;
 					reg-names = "dram0", "dram1",
-						    "shrdram2";
+						    "shrdram2", "iep";
 				};
 
 				icssg1_cfg: cfg@26000 {
 					compatible = "syscon";
 					reg = <0x26000 0x200>;
-				};
-
-				icssg1_iep: iep@2e000 {
-					compatible = "syscon";
-					reg = <0x2e000 0x1000>;
 				};
 
 				icssg1_mii_rt: mii_rt@32000 {
@@ -984,19 +976,15 @@
 				icssg2_mem: memories@0 {
 					reg = <0x0 0x2000>,
 					      <0x2000 0x2000>,
-					      <0x10000 0x10000>;
+					      <0x10000 0x10000>,
+					      <0x2e000 0x1000>;
 					reg-names = "dram0", "dram1",
-						    "shrdram2";
+						    "shrdram2", "iep";
 				};
 
 				icssg2_cfg: cfg@26000 {
 					compatible = "syscon";
 					reg = <0x26000 0x200>;
-				};
-
-				icssg2_iep: iep@2e000 {
-					compatible = "syscon";
-					reg = <0x2e000 0x1000>;
 				};
 
 				icssg2_mii_rt: mii_rt@32000 {
