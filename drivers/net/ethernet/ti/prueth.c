@@ -4442,7 +4442,9 @@ static int prueth_probe(struct platform_device *pdev)
 
 		if (!eth1_node && i == PRUETH_MEM_DRAM1)
 			continue;
-
+		if ((prueth->fw_data->driver_data != PRUSS_AM57XX) &&
+		    (i == PRUETH_MEM_ECAP))
+			continue;
 		ret = pruss_request_mem_region(pruss, pruss_mem_ids[i],
 					       &prueth->mem[i]);
 		if (ret) {
