@@ -14,19 +14,14 @@ Required properties:
 - interrupt-parent : pHandle to the PRUSS INTC node
 - rx-queue-size    : Array of queue sizes in rx direction (Ingress)
                      Format /bits/ 16 <q1 q2 q3 q4>
-- tx-queue-size    : Array of queue sizes in tx direction (Egress)
-                     Format /bits/ 16 <q1 q2 q3 q4>
+                     Note that the queue size value (q1/q2/q3/q4)
+                     has to be non-zero
 
     If no q size config exists for a particular port in
     dts, the following defaults for that port will
     be used.
 
-    HSR/PRP Defaults:
-    host: rx-queue-size = /bits/ 16 <206 206 206 206>
-    mii0: tx-queue-size = /bits/ 16 <97 97 97 97>
-    mii1: tx-queue-size = /bits/ 16 <97 97 97 97>
-
-    EMAC Defaults:
+    EMAC/HSR/PRP Defaults:
     host: rx-queue-size = /bits/ 16 <194 194 194 194>
     mii0: tx-queue-size = /bits/ 16 <97 97 97 97>
     mii1: tx-queue-size = /bits/ 16 <97 97 97 97>
@@ -49,6 +44,16 @@ Required properties for children:
                      numbers used as the interrupt sources for Rx
                      Tx and PTP Tx event packet timestamping (with
                      PRP firmware) respectively.
+- tx-queue-size    : Array of queue sizes in tx direction (Egress)
+                     Format /bits/ 16 <q1 q2 q3 q4>.
+                     Note that the queue size value (q1/q2/q3/q4) has
+                     to be non-zero.
+
+NOTE: When changing queue sizes, make sure that the sum of all queue
+sizes across ingress or host (defined by rx-queue-size or default values
+in the driver) and egress or mii0/1 ports (defined by port specific
+tx-queue-size or default values in the driver) must be less than or
+equal to 1552.
 
 Optional properties for children:
 - local-mac-address	: mac address for the port.

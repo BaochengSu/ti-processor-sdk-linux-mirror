@@ -430,6 +430,10 @@ static void send_supervision_frame(struct hsr_prp_port *master,
 	int len;
 
 	priv = master->priv;
+
+	if (priv->disable_sv_frame)
+		return;
+
 	hlen = LL_RESERVED_SPACE(master->dev);
 	tlen = master->dev->needed_tailroom;
 	len = sizeof(struct hsr_tag) +
