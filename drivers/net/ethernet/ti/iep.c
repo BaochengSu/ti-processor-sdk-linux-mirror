@@ -752,7 +752,8 @@ int iep_rx_timestamp(struct iep *iep, u16 ts_ofs, struct sk_buff *skb)
 	return 0;
 }
 
-int iep_tx_timestamp(struct iep *iep, u16 ts_ofs, struct sk_buff *skb)
+int iep_tx_timestamp(struct iep *iep, u16 ts_ofs, struct sk_buff *skb,
+		     unsigned long tmo)
 {
 	struct skb_shared_hwtstamps ssh;
 	void __iomem *sram = iep->sram;
@@ -764,6 +765,9 @@ int iep_tx_timestamp(struct iep *iep, u16 ts_ofs, struct sk_buff *skb)
 
 	if (!cycles)
 		return -ENOENT;
+
+	if (time_after(jiffies, tmo))
+		return -ETIME;
 
 	ns = timecounter_cyc2time(&iep->tc, cycles);
 

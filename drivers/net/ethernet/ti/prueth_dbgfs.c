@@ -19,25 +19,45 @@
 #include "hsr_prp_firmware.h"
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
-/* prueth_queue_stats_show - Formats and print prueth queue stats
+/* prueth_queue_show - Formats and print prueth queue related info
  */
 static int
-prueth_queue_stats_show(struct seq_file *sfp, void *data)
+prueth_queue_info_show(struct seq_file *sfp, void *data)
 {
 	struct prueth_emac *emac = (struct prueth_emac *)sfp->private;
+	struct prueth *prueth = emac->prueth;
+	struct prueth_mmap_port_cfg_basis *pb =
+		&prueth->mmap_port_cfg_basis[emac->port_id];
+	int i;
 
+	seq_puts(sfp, "TxQ-0 TxQ-1 TxQ-2 TxQ-3\n");
+
+	for (i = PRUETH_QUEUE1; i <= PRUETH_QUEUE4; i++)
+		seq_printf(sfp, "%5d ", pb->queue_size[i]);
+
+	seq_puts(sfp, "\n");
+	pb = &prueth->mmap_port_cfg_basis[PRUETH_PORT_HOST];
+	if (emac->port_id == PRUETH_PORT_MII0) {
+		seq_puts(sfp, "RxQ-0 RxQ-1\n");
+		for (i = PRUETH_QUEUE1; i <= PRUETH_QUEUE2; i++)
+			seq_printf(sfp, "%5d ", pb->queue_size[i]);
+	} else {
+		seq_puts(sfp, "RxQ-2 RxQ-3\n");
+		for (i = PRUETH_QUEUE3; i <= PRUETH_QUEUE4; i++)
+			seq_printf(sfp, "%5d ", pb->queue_size[i]);
+	}
+	seq_puts(sfp, "\n");
+	seq_puts(sfp, "EMAC Queue Stats\n");
+	seq_puts(sfp,
+		 "=====================================================\n");
 	if (!PRUETH_HAS_RED(emac->prueth))
-		seq_printf(sfp,
-			   "   TxQ-0    TxQ-1    TxQ-2    TxQ-3    ");
+		seq_puts(sfp, "   TxQ-0    TxQ-1    TxQ-2    TxQ-3    ");
 	else
-		seq_printf(sfp,
-			   "   TxQ-2    TxQ-3    ");
+		seq_puts(sfp, "   TxQ-2    TxQ-3    ");
 	if (emac->port_id == PRUETH_PORT_MII0)
-		seq_printf(sfp,
-			   "RxQ-0    RxQ-1\n");
+		seq_puts(sfp, "RxQ-0    RxQ-1\n");
 	else
-		seq_printf(sfp,
-			   "RxQ-2    RxQ-3\n");
+		seq_puts(sfp, "RxQ-2    RxQ-3\n");
 	seq_printf(sfp,
 		   "=====================================================\n");
 
@@ -67,11 +87,11 @@ prueth_queue_stats_show(struct seq_file *sfp, void *data)
 static int
 prueth_queue_stats_open(struct inode *inode, struct file *filp)
 {
-	return single_open(filp, prueth_queue_stats_show,
+	return single_open(filp, prueth_queue_info_show,
 			   inode->i_private);
 }
 
-static const struct file_operations prueth_emac_stats_fops = {
+static const struct file_operations prueth_emac_info_fops = {
 	.owner	= THIS_MODULE,
 	.open	= prueth_queue_stats_open,
 	.read	= seq_read,
@@ -105,9 +125,9 @@ int prueth_debugfs_init(struct prueth_emac *emac)
 	}
 
 	emac->root_dir = de;
-	de = debugfs_create_file("stats", S_IFREG | 0444,
+	de = debugfs_create_file("queue-info", S_IFREG | 0444,
 				 emac->root_dir, emac,
-				 &prueth_emac_stats_fops);
+				 &prueth_emac_info_fops);
 	if (!de) {
 		netdev_err(emac->ndev, "Cannot create emac stats file\n");
 		return rc;

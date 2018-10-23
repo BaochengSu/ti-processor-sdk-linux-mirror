@@ -138,7 +138,8 @@ struct iep {
 
 void iep_reset_timestamp(struct iep *iep, u16 ts_ofs);
 int iep_rx_timestamp(struct iep *iep, u16 ts_ofs, struct sk_buff *skb);
-int iep_tx_timestamp(struct iep *iep, u16 ts_ofs, struct sk_buff *skb);
+int iep_tx_timestamp(struct iep *iep, u16 ts_ofs, struct sk_buff *skb,
+		     unsigned long tmo);
 int iep_register(struct iep *iep);
 void iep_unregister(struct iep *iep);
 struct iep *iep_create(struct device *dev, void __iomem *sram,
