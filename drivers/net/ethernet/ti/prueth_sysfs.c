@@ -28,9 +28,6 @@ static ssize_t nsp_credit_store(struct device *dev,
 	struct prueth_emac *emac = nsp_credit_to_emac(attr);
 	u32 val;
 
-	if (!PRUETH_HAS_RED(emac->prueth))
-		return -EINVAL;
-
 	if (kstrtou32(buffer, 0, &val))
 		return -EINVAL;
 

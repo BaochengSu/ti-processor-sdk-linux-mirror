@@ -13,6 +13,8 @@
  * GNU General Public License for more details.
  */
 #if IS_ENABLED(CONFIG_DEBUG_FS)
+int prueth_dualemac_debugfs_init(struct prueth_emac *emac);
+void prueth_dualemac_debugfs_term(struct prueth_emac *emac);
 int prueth_hsr_prp_debugfs_init(struct prueth *prueth);
 void prueth_hsr_prp_debugfs_term(struct prueth *prueth);
 int prueth_debugfs_init(struct prueth_emac *emac);

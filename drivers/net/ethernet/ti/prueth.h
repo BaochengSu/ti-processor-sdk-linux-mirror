@@ -268,6 +268,11 @@ struct lre_statistics {
 	u32 lre_cnt_sup_pru1; /* count of supervisor frames to host on PRU 1 */
 } __packed;
 
+struct emac_statistics {
+	u32 vlan_dropped;
+	u32 multicast_dropped;
+} __packed;
+
 struct prueth_hsr_prp_node {
 	u8 mac[6];
 	u8 state;
@@ -358,7 +363,8 @@ enum pruss_ethtype {
 #define MS_TO_NS(msec)		((msec) * 1000 * 1000)
 #define PRUETH_RED_TABLE_CHECK_PERIOD_MS	10
 #define PRUETH_HAS_PTP(p) \
-	((PRUETH_HAS_PRP(p) || PRUETH_HAS_HSR(p)) && p->fw_data->ptp_support)
+	((PRUETH_HAS_PRP(p) || PRUETH_HAS_HSR(p) || PRUETH_IS_EMAC(p)) && \
+	 p->fw_data->ptp_support)
 /* NSP (Network Storm Prevention) timer re-uses NT timer */
 #define PRUETH_DEFAULT_NSP_TIMER_MS	100
 #define PRUETH_DEFAULT_NSP_TIMER_COUNT	\
@@ -446,7 +452,7 @@ enum fw_revision {
 	FW_REV_V2_1
 };
 
-/* Node Table (nt) offsets/size information */
+/* Firmware offsets/size information */
 struct prueth_fw_offsets {
 	u32 index_array_offset;
 	u32 bin_array_offset;
@@ -457,6 +463,11 @@ struct prueth_fw_offsets {
 	u32 index_array_max_entries;
 	u32 bin_array_max_entries;
 	u32 nt_array_max_entries;
+	u32 vlan_ctrl_byte;
+	u32 vlan_filter_tbl;
+	u32 mc_ctrl_byte;
+	u32 mc_filter_mask;
+	u32 mc_filter_tbl;
 	u16 hash_mask;
 };
 
@@ -521,10 +532,13 @@ struct prueth_emac {
 	spinlock_t addr_lock;
 	unsigned int nsp_timer_count;
 	unsigned int nsp_credit;
+	unsigned char mc_mac_mask[ETH_ALEN];
 	struct kobject kobj;
 #ifdef	CONFIG_DEBUG_FS
 	struct dentry *root_dir;
 	struct dentry *stats_file;
+	struct dentry *vlan_filter_file;
+	struct dentry *mc_filter_file;
 #endif
 #ifdef CONFIG_SYSFS
 	struct device_attribute nsp_credit_attr;
@@ -532,7 +546,8 @@ struct prueth_emac {
 #endif
 	int ptp_tx_enable;
 	int ptp_rx_enable;
-	int ptp_tx_irq;
+	int emac_ptp_tx_irq;
+	int hsrprp_ptp_tx_irq;
 
 	struct tx_ev_cb_data  ct_evt_cb[PTP_DLY_REQ_MSG_ID + 1];
 	spinlock_t            ct_lock; /* serialize accesses to ct_ev_msg[] */
@@ -617,11 +632,10 @@ struct prueth {
 	struct prueth_emac *emac[PRUETH_NUM_MACS];
 	struct net_device *registered_netdevs[PRUETH_NUM_MACS];
 	const struct prueth_private_data *fw_data;
-	const struct prueth_fw_offsets *fw_offsets;
+	struct prueth_fw_offsets *fw_offsets;
 	int pruss_id;
 	size_t ocmc_ram_size;
 	unsigned int eth_type;
-	unsigned char sw_mc_mac_mask[ETH_ALEN];
 	unsigned int hsr_mode;
 	unsigned int emac_configured;
 	unsigned int tbl_check_period;
@@ -633,6 +647,7 @@ struct prueth {
 	struct prueth_mmap_sram_cfg mmap_sram_cfg;
 	struct prueth_mmap_ocmc_cfg mmap_ocmc_cfg;
 	struct lre_statistics lre_stats;
+	struct emac_statistics emac_stats;
 	struct iep *iep;
 	unsigned int rx_pacing_timeout;
 	/* To provide a synchronization point to wait before proceed to port

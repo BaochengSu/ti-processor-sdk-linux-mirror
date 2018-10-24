@@ -99,45 +99,6 @@ static const struct file_operations prueth_emac_info_fops = {
 	.release = single_release,
 };
 
-/* prueth_debugfs_init - create  debugfs file for displaying queue stats
- *
- * Description:
- * When debugfs is configured this routine dump the rx_packet_counts and
- * tx_packet_counts in the emac structures
- */
-
-int prueth_debugfs_init(struct prueth_emac *emac)
-{
-	int rc = -1;
-	struct dentry *de;
-	char name[32];
-
-	memset(name, 0, sizeof(name));
-	sprintf(name, "prueth-");
-	strncat(name, emac->ndev->name, sizeof(name) - 1);
-	de = debugfs_create_dir(name, NULL);
-
-	if (!de) {
-		netdev_err(emac->ndev,
-			   "Cannot create debugfs dir name %s\n",
-			   name);
-		return rc;
-	}
-
-	emac->root_dir = de;
-	de = debugfs_create_file("queue-info", S_IFREG | 0444,
-				 emac->root_dir, emac,
-				 &prueth_emac_info_fops);
-	if (!de) {
-		netdev_err(emac->ndev, "Cannot create emac stats file\n");
-		return rc;
-	}
-
-	emac->stats_file = de;
-
-	return 0;
-}
-
 static void prueth_hsr_prp_node_show(struct seq_file *sfp,
 				     struct prueth *prueth, int index)
 {
@@ -266,17 +227,22 @@ static const struct file_operations prueth_hsr_prp_node_table_fops = {
 	.release = single_release,
 };
 
-/* prueth_hsr_prp_vlan_filter_show - Formats and prints vlan_filter entries
+/* prueth_vlan_filter_show - Formats and prints vlan_filter entries
  */
 static int
-prueth_hsr_prp_vlan_filter_show(struct seq_file *sfp, void *data)
+prueth_vlan_filter_show(struct seq_file *sfp, void *data)
 {
-	struct prueth *prueth = (struct prueth *)sfp->private;
-	void __iomem *sram = prueth->mem[PRUETH_MEM_SHARED_RAM].va;
+	struct prueth_emac *emac = (struct prueth_emac *)sfp->private;
+	struct prueth *prueth = emac->prueth;
+	void __iomem *ram = (emac->port_id == PRUETH_PORT_MII0) ?
+				prueth->mem[PRUETH_MEM_DRAM0].va :
+				prueth->mem[PRUETH_MEM_DRAM1].va;
 	u8 val, mask;
 	int i, j;
+	u32 vlan_ctrl_byte = prueth->fw_offsets->vlan_ctrl_byte;
+	u32 vlan_filter_tbl = prueth->fw_offsets->vlan_filter_tbl;
 
-	val = readb(sram + VLAN_FLTR_CTRL_BYTE);
+	val = readb(ram + vlan_ctrl_byte);
 	seq_printf(sfp, "VLAN Filter : %s",
 		   val & BIT(VLAN_FLTR_CTRL_SHIFT) ?
 			 "enabled\n" : "disabled\n");
@@ -290,7 +256,7 @@ prueth_hsr_prp_vlan_filter_show(struct seq_file *sfp, void *data)
 	}
 	if (val) {
 		for (i = 0; i < VLAN_FLTR_TBL_SIZE; i++) {
-			val = readb(sram + VLAN_FLTR_TBL_BASE_ADDR + i);
+			val = readb(ram + vlan_filter_tbl + i);
 			if (!(i % 8))
 				seq_printf(sfp, "\n%5d: ", i * 8);
 
@@ -308,43 +274,48 @@ prueth_hsr_prp_vlan_filter_show(struct seq_file *sfp, void *data)
 	return 0;
 }
 
-/* prueth_hsr_prp_vlan_filter_open - Open the vlan_filter file
+/* prueth_vlan_filter_open - Open the vlan_filter file
  *
  * Description:
- * This routine opens a debugfs file vlan_filter of specific hsr
- * or prp device
+ * This routine opens a debugfs file vlan_filter
  */
 static int
-prueth_hsr_prp_vlan_filter_open(struct inode *inode, struct file *filp)
+prueth_vlan_filter_open(struct inode *inode, struct file *filp)
 {
-	return single_open(filp, prueth_hsr_prp_vlan_filter_show,
+	return single_open(filp, prueth_vlan_filter_show,
 			   inode->i_private);
 }
 
-static const struct file_operations prueth_hsr_prp_vlan_filter_fops = {
+static const struct file_operations prueth_vlan_filter_fops = {
 	.owner	= THIS_MODULE,
-	.open	= prueth_hsr_prp_vlan_filter_open,
+	.open	= prueth_vlan_filter_open,
 	.read	= seq_read,
 	.llseek = seq_lseek,
 	.release = single_release,
 };
 
-/* prueth_hsr_prp_mc_filter_show - Formats and prints mc_filter entries
+/* prueth_mc_filter_show - Formats and prints mc_filter entries
  */
 static int
-prueth_hsr_prp_mc_filter_show(struct seq_file *sfp, void *data)
+prueth_mc_filter_show(struct seq_file *sfp, void *data)
 {
-	struct prueth *prueth = (struct prueth *)sfp->private;
-	void __iomem *dram1 = prueth->mem[PRUETH_MEM_DRAM1].va;
+	struct prueth_emac *emac = (struct prueth_emac *)sfp->private;
+	struct prueth *prueth = emac->prueth;
+	void __iomem *ram = (emac->port_id == PRUETH_PORT_MII0) ?
+				prueth->mem[PRUETH_MEM_DRAM0].va :
+				prueth->mem[PRUETH_MEM_DRAM1].va;
 	u8 val;
 	int i;
+	u32 mc_ctrl_byte = prueth->fw_offsets->mc_ctrl_byte;
+	u32 mc_filter_mask = prueth->fw_offsets->mc_filter_mask;
+	u32 mc_filter_tbl = prueth->fw_offsets->mc_filter_tbl;
 
-	val = readb(dram1 + M_MULTICAST_TABLE_SEARCH_OP_CONTROL_BIT);
+	val = readb(ram + mc_ctrl_byte);
 
 	seq_printf(sfp, "MC Filter : %s", val ? "enabled\n" : "disabled\n");
 	seq_puts(sfp, "MC Mask : ");
 	for (i = 0; i < 6; i++) {
-		val = readb(dram1 + MULTICAST_FILTER_MASK + i);
+		val = readb(ram + mc_filter_mask + i);
 		if (i == 5)
 			seq_printf(sfp, "%x", val);
 		else
@@ -352,12 +323,12 @@ prueth_hsr_prp_mc_filter_show(struct seq_file *sfp, void *data)
 	}
 	seq_puts(sfp, "\n");
 
-	val = readb(dram1 + M_MULTICAST_TABLE_SEARCH_OP_CONTROL_BIT);
+	val = readb(ram + mc_ctrl_byte);
 	seq_puts(sfp, "MC Filter table below 1 - Allowed, 0 - Dropped\n");
 
 	if (val) {
 		for (i = 0; i < MULTICAST_TABLE_SIZE; i++) {
-			val = readb(dram1 + MULTICAST_FILTER_TABLE + i);
+			val = readb(ram + mc_filter_tbl + i);
 			if (!(i % 16))
 				seq_printf(sfp, "\n%3x: ", i);
 			seq_printf(sfp, "%d ", val);
@@ -368,22 +339,21 @@ prueth_hsr_prp_mc_filter_show(struct seq_file *sfp, void *data)
 	return 0;
 }
 
-/* prueth_hsr_prp_mc_filter_open - Open the mc_filter file
+/* prueth_mc_filter_open - Open the mc_filter file
  *
  * Description:
- * This routine opens a debugfs file mc_filter of specific hsr
- * or prp device
+ * This routine opens a debugfs file mc_filter
  */
 static int
-prueth_hsr_prp_mc_filter_open(struct inode *inode, struct file *filp)
+prueth_mc_filter_open(struct inode *inode, struct file *filp)
 {
-	return single_open(filp, prueth_hsr_prp_mc_filter_show,
+	return single_open(filp, prueth_mc_filter_show,
 			   inode->i_private);
 }
 
-static const struct file_operations prueth_hsr_prp_mc_filter_fops = {
+static const struct file_operations prueth_mc_filter_fops = {
 	.owner	= THIS_MODULE,
-	.open	= prueth_hsr_prp_mc_filter_open,
+	.open	= prueth_mc_filter_open,
 	.read	= seq_read,
 	.llseek = seq_lseek,
 	.release = single_release,
@@ -550,8 +520,9 @@ int prueth_hsr_prp_debugfs_init(struct prueth *prueth)
 	prueth->node_tbl_file = de;
 
 	de = debugfs_create_file("mc_filter", S_IFREG | 0444,
-				 prueth->root_dir, prueth,
-				 &prueth_hsr_prp_mc_filter_fops);
+				 prueth->root_dir,
+				 prueth->emac[PRUETH_PORT_MII0],
+				 &prueth_mc_filter_fops);
 	if (!de) {
 		dev_err(dev, "Cannot create hsr-prp mc_filter file\n");
 		goto error;
@@ -559,8 +530,9 @@ int prueth_hsr_prp_debugfs_init(struct prueth *prueth)
 	prueth->mc_filter_file = de;
 
 	de = debugfs_create_file("vlan_filter", S_IFREG | 0444,
-				 prueth->root_dir, prueth,
-				 &prueth_hsr_prp_vlan_filter_fops);
+				 prueth->root_dir,
+				 prueth->emac[PRUETH_PORT_MII0],
+				 &prueth_vlan_filter_fops);
 	if (!de) {
 		dev_err(dev, "Cannot create hsr-prp vlan_filter file\n");
 		goto error;
@@ -610,6 +582,61 @@ error:
 
 }
 
+/* prueth_dualemac_debugfs_term - Tear down debugfs intrastructure for dual emac
+ *
+ * Description:
+ * When Debufs is configured this routine removes debugfs file system
+ * elements that are specific to dual emac
+ */
+void
+prueth_dualemac_debugfs_term(struct prueth_emac *emac)
+{
+	debugfs_remove(emac->vlan_filter_file);
+	debugfs_remove(emac->mc_filter_file);
+	emac->vlan_filter_file = NULL;
+	emac->mc_filter_file = NULL;
+}
+
+/* prueth_dualemac_debugfs_init - create  debugfs file for dual emac
+ *
+ * Description:
+ * When debugfs is configured this routine creates dual emac debugfs files
+ */
+
+int prueth_dualemac_debugfs_init(struct prueth_emac *emac)
+{
+	int rc = -1;
+	struct dentry *de;
+
+	if (emac->root_dir && !emac->mc_filter_file &&
+	    !emac->vlan_filter_file) {
+		de = debugfs_create_file("mc_filter", S_IFREG | 0444,
+					 emac->root_dir, emac,
+					 &prueth_mc_filter_fops);
+		if (!de) {
+			netdev_err(emac->ndev,
+				   "Cannot create mc_filter file\n");
+			return rc;
+		}
+		emac->mc_filter_file = de;
+
+		de = debugfs_create_file("vlan_filter", S_IFREG | 0444,
+					 emac->root_dir, emac,
+					 &prueth_vlan_filter_fops);
+		if (!de) {
+			netdev_err(emac->ndev,
+				   "Cannot create vlan_filter file\n");
+			goto error;
+		}
+
+		emac->vlan_filter_file = de;
+	}
+	return 0;
+error:
+	prueth_dualemac_debugfs_term(emac);
+	return rc;
+}
+
 /* prueth_debugfs_term - Tear down debugfs intrastructure for emac stats
  *
  * Description:
@@ -622,6 +649,56 @@ prueth_debugfs_term(struct prueth_emac *emac)
 	debugfs_remove_recursive(emac->root_dir);
 	emac->stats_file = NULL;
 	emac->root_dir = NULL;
+	emac->vlan_filter_file = NULL;
+	emac->mc_filter_file = NULL;
+}
+
+/* prueth_debugfs_init - create  debugfs file for displaying queue stats
+ *
+ * Description:
+ * When debugfs is configured this routine dump the rx_packet_counts and
+ * tx_packet_counts in the emac structures
+ */
+
+int prueth_debugfs_init(struct prueth_emac *emac)
+{
+	int rc = -1;
+	struct dentry *de;
+	char name[32];
+
+	memset(name, 0, sizeof(name));
+	sprintf(name, "prueth-");
+	strncat(name, emac->ndev->name, sizeof(name) - 1);
+	de = debugfs_create_dir(name, NULL);
+
+	if (!de) {
+		netdev_err(emac->ndev,
+			   "Cannot create debugfs dir name %s\n",
+			   name);
+		return rc;
+	}
+
+	emac->root_dir = de;
+	de = debugfs_create_file("queue-info", S_IFREG | 0444,
+				 emac->root_dir, emac,
+				 &prueth_emac_info_fops);
+	if (!de) {
+		netdev_err(emac->ndev, "Cannot create emac stats file\n");
+		goto error;
+	}
+
+	emac->stats_file = de;
+
+	if (PRUETH_IS_EMAC(emac->prueth)) {
+		rc = prueth_dualemac_debugfs_init(emac);
+		if (rc)
+			goto error;
+	}
+
+	return 0;
+error:
+	prueth_debugfs_term(emac);
+	return rc;
 }
 
 #endif
