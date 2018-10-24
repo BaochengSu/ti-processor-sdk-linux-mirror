@@ -38,12 +38,11 @@ for the first PRU can be NULL. See 2nd example.
 Required properties for children:
 - phy-handle       : See ethernet.txt file in the same directory.
 - phy-mode         : See ethernet.txt file in the same directory.
-- interrupt-names  : should be "rx", "tx" and "ptp_tx".
-                     ptp_tx is optional.
+- interrupt-names  : should be "rx", "tx", "emac_ptp_tx", and "hsrprp_ptp_tx".
+                     emac_ptp_tx and hsrprp_ptp_tx are optional.
 - interrupts       : should contain an array of PRUSS system event
                      numbers used as the interrupt sources for Rx
-                     Tx and PTP Tx event packet timestamping (with
-                     PRP firmware) respectively.
+                     Tx and PTP Tx event packet timestamping respectively.
 - tx-queue-size    : Array of queue sizes in tx direction (Egress)
                      Format /bits/ 16 <q1 q2 q3 q4>.
                      Note that the queue size value (q1/q2/q3/q4) has
@@ -71,8 +70,9 @@ Example (am572x-idk board, dual-emac):
 		pruss2_emac0: ethernet-mii0 {
 			phy-handle = <&pruss2_eth0_phy>;
 			phy-mode = "mii";
-			interrupts = <20>, <22>, <23>;
-			interrupt-names = "rx", "tx", "ptp_tx";
+			interrupts = <20>, <22>, <23>, <26>;
+			interrupt-names = "rx", "tx", "hsrprp_ptp_tx",
+					  "emac_ptp_tx";
 			/* Filled in by bootloader */
 			local-mac-address = [00 00 00 00 00 00];
 		};
@@ -80,8 +80,9 @@ Example (am572x-idk board, dual-emac):
 		pruss2_emac1: ethernet-mii1 {
 			phy-handle = <&pruss2_eth1_phy>;
 			phy-mode = "mii";
-			interrupts = <21>, <23>, <24>;
-			interrupt-names = "rx", "tx", "ptp_tx";
+			interrupts = <21>, <23>, <24>, <27>;
+			interrupt-names = "rx", "tx", "hsrprp_ptp_tx",
+					  "emac_ptp_tx";
 			/* Filled in by bootloader */
 			local-mac-address = [00 00 00 00 00 00];
 		};
@@ -100,8 +101,9 @@ Example (am572x-idk board, single-emac):
 		pruss2_emac1: ethernet-mii1 {
 			phy-handle = <&pruss2_eth1_phy>;
 			phy-mode = "mii";
-			interrupts = <21>, <23>, <24>;
-			interrupt-names = "rx", "tx", "ptp_tx";
+			interrupts = <21>, <23>, <24>, <27>;
+			interrupt-names = "rx", "tx", "hsrprp_ptp_tx",
+					  "emac_ptp_tx";
 			/* Filled in by bootloader */
 			local-mac-address = [00 00 00 00 00 00];
 		};
