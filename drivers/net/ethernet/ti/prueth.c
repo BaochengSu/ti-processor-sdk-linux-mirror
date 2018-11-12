@@ -1907,6 +1907,7 @@ static int emac_rx_packet(struct prueth_emac *emac, u16 *bd_rd_ptr,
 	struct prueth_mmap_port_cfg_basis *pb;
 	struct net_device *ndev = emac->ndev;
 	struct prueth *prueth = emac->prueth;
+	const struct prueth_private_data *fw_data = prueth->fw_data;
 	int read_block, update_block, pkt_block_size;
 	unsigned int buffer_desc_count;
 	bool buffer_wrapped = false;
@@ -2014,13 +2015,18 @@ static int emac_rx_packet(struct prueth_emac *emac, u16 *bd_rd_ptr,
 			offset = 4;
 	}
 
-	if (PRUETH_HAS_RED(prueth)) {
+	/* TODO. The check for FW_REV_V1_0 is a workaround since
+	 * lookup of MAC address in Node table by this version of firmware
+	 * is not reliable. Once this issue is fixed in firmware, this driver
+	 * check has to be removed.
+	 */
+	if (PRUETH_HAS_RED(prueth) &&
+	    (!pkt_info.lookup_success || fw_data->fw_rev == FW_REV_V1_0)) {
 		if (PRUETH_HAS_PRP(prueth) && !emac->prp_emac_mode) {
 			memcpy(macid,
 			       ((pkt_info.sv_frame) ?
 				nt_dst_addr + 20 + offset :
-				nt_dst_addr + 6),
-			       6);
+				nt_dst_addr + 6), 6);
 
 			node_table_insert(prueth, macid, emac->port_id,
 					  pkt_info.sv_frame, RED_PROTO_PRP,
