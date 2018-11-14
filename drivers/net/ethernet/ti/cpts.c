@@ -77,8 +77,23 @@ struct cpts_skb_cb_data {
 					 1000000000UL / CPTS_TMR_CLK_PERIOD + 1)
 #define CPTS_LATCH_TMR_CMP_CNT		(CPTS_LATCH_TMR_RELOAD_CNT + \
 					 10000000UL / CPTS_TMR_CLK_PERIOD)
-#define CPTS_LATCH_TICK_THRESH_MIN	(80000 / CPTS_TMR_CLK_PERIOD)
-#define CPTS_LATCH_TICK_THRESH_MAX	(120000 / CPTS_TMR_CLK_PERIOD)
+/* The following three constants define the edges and center of the
+ * desired latch offset measurement window. We are able to calculate
+ * the timestamp of the incoming 1PPS pulse by adjusting it with
+ * the latch offset which is the distance from the input pulse to
+ * the rollover time 0xFFFFFFFF when timer15 pulse is generated.
+ * However we need to keep the offset to be as small as possible to
+ * reduce the acumulation error introduced by frequency difference
+ * between the timer15 and the PTP master.
+ * The measurement point will move from the center to the left or right
+ * based on the frequency difference and the latch processing state
+ * machine will bring it back to the center when it exceeds the window
+ * range. With the current window size as 50us from center to edge, the
+ * algorithm can handle the frequency difference < 25PPM.
+ */
+
+#define CPTS_LATCH_TICK_THRESH_MIN	(50000 / CPTS_TMR_CLK_PERIOD)
+#define CPTS_LATCH_TICK_THRESH_MAX	(150000 / CPTS_TMR_CLK_PERIOD)
 #define CPTS_LATCH_TICK_THRESH_MID	((CPTS_LATCH_TICK_THRESH_MIN + \
 					  CPTS_LATCH_TICK_THRESH_MAX) / 2)
 #define CPTS_LATCH_TICK_THRESH_UNSYNC	(1000000 / CPTS_TMR_CLK_PERIOD)
@@ -1633,6 +1648,18 @@ static void cpts_latch_proc(struct cpts *cpts, u32 latch_cnt)
 			skip = true;
 		} else {
 			skip = false;
+			/* Check whether the latch offset is already within
+			 * the range because the TLDR load may occur prior
+			 * to the initial rollover
+			 */
+			if (offset >= CPTS_LATCH_TICK_THRESH_MIN &&
+			    offset <= CPTS_LATCH_TICK_THRESH_MAX) {
+				/* latch offset is within the range,
+				 * enter SYNC state
+				 */
+				cpts_latch_pps_start(cpts);
+				cpts->pps_latch_state = SYNC;
+			}
 		}
 
 		WRITE_TLDR(cpts->odt2, reload_cnt);

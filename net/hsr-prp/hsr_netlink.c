@@ -28,7 +28,7 @@ static const struct nla_policy hsr_policy[IFLA_HSR_MAX + 1] = {
 	[IFLA_HSR_SEQ_NR]		= { .type = NLA_U16 },
 	[IFLA_HSR_SV_VID]		= { .type = NLA_U16 },
 	[IFLA_HSR_SV_PCP]		= { .type = NLA_U8 },
-	[IFLA_HSR_SV_CFI]		= { .type = NLA_U8 },
+	[IFLA_HSR_SV_DEI]		= { .type = NLA_U8 },
 };
 
 
@@ -42,7 +42,7 @@ static int hsr_newlink(struct net *src_net, struct net_device *dev,
 	struct net_device *link[2];
 	unsigned char multicast_spec, hsr_version;
 	unsigned short vid = 0;
-	unsigned char pcp = 0, cfi = 0;
+	unsigned char pcp = 0, dei = 0;
 	bool sv_vlan_tag_needed = false;
 
 	if (!data) {
@@ -87,21 +87,21 @@ static int hsr_newlink(struct net *src_net, struct net_device *dev,
 		pcp = nla_get_u8(data[IFLA_HSR_SV_PCP]);
 	}
 
-	if (data[IFLA_HSR_SV_CFI]) {
+	if (data[IFLA_HSR_SV_DEI]) {
 		sv_vlan_tag_needed = true;
-		cfi = nla_get_u8(data[IFLA_HSR_SV_CFI]);
+		dei = nla_get_u8(data[IFLA_HSR_SV_DEI]);
 	}
 
 	if (sv_vlan_tag_needed &&
-	    (vid >= (VLAN_N_VID - 1) || cfi > 1 || pcp > 7)) {
+	    (vid >= (VLAN_N_VID - 1) || dei > 1 || pcp > 7)) {
 		netdev_info(dev,
-			    "HSR: wrong vlan params: vid %d, pcp %d, cfi %d\n",
-			    vid, pcp, cfi);
+			    "HSR: wrong vlan params: vid %d, pcp %d, dei %d\n",
+			    vid, pcp, dei);
 		return -EINVAL;
 	}
 
 	return hsr_prp_dev_finalize(dev, link, multicast_spec, hsr_version,
-				    sv_vlan_tag_needed, vid, pcp, cfi);
+				    sv_vlan_tag_needed, vid, pcp, dei);
 }
 
 static int hsr_fill_info(struct sk_buff *skb, const struct net_device *dev)

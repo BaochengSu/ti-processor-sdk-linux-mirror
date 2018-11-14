@@ -249,7 +249,7 @@ struct hsr_prp_priv {
 	/* Below are used when SV frames are to be sent with VLAN tag */
 	u8 use_vlan_for_sv;
 	u16 sv_frame_vid;
-	u8 sv_frame_cfi;
+	u8 sv_frame_dei;
 	u8 sv_frame_pcp;
 	/* To enable/disable SV frame transmission */
 	u8 disable_sv_frame;

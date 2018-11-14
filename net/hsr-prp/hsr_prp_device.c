@@ -476,7 +476,7 @@ static void send_supervision_frame(struct hsr_prp_port *master,
 		vhdr = skb_put(skb, VLAN_HLEN);
 		vlan_tci = priv->sv_frame_vid;
 		vlan_tci |= (priv->sv_frame_pcp	<< VLAN_PRIO_SHIFT);
-		if (priv->sv_frame_cfi)
+		if (priv->sv_frame_dei)
 			vlan_tci |= VLAN_CFI_MASK;
 		if (!prot_ver)
 			proto = ETH_P_PRP;
@@ -878,7 +878,7 @@ int hsr_prp_dev_finalize(struct net_device *hsr_prp_dev,
 			 struct net_device *slave[2],
 			 unsigned char multicast_spec, u8 protocol_version,
 			 bool sv_vlan_tag_needed, unsigned short vid,
-			 unsigned char pcp, unsigned char cfi)
+			 unsigned char pcp, unsigned char dei)
 {
 	netdev_features_t mask =
 		NETIF_F_HW_PRP_RX_OFFLOAD | NETIF_F_HW_HSR_RX_OFFLOAD;
@@ -929,7 +929,7 @@ int hsr_prp_dev_finalize(struct net_device *hsr_prp_dev,
 	/* update vlan tag infor for SV frames */
 	priv->use_vlan_for_sv = sv_vlan_tag_needed;
 	priv->sv_frame_vid = vid;
-	priv->sv_frame_cfi = cfi;
+	priv->sv_frame_dei = dei;
 	priv->sv_frame_pcp = pcp;
 
 	/* FIXME: should I modify the value of these?
