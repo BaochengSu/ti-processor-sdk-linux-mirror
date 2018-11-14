@@ -43,8 +43,8 @@ hsr_prp_lre_info_show(struct seq_file *sfp, void *data)
 			   priv->sv_frame_vid);
 		seq_printf(sfp, "SV Frame PCP : %d\n",
 			   priv->sv_frame_pcp);
-		seq_printf(sfp, "SV Frame CFI : %d\n",
-			   priv->sv_frame_cfi);
+		seq_printf(sfp, "SV Frame DEI : %d\n",
+			   priv->sv_frame_dei);
 	}
 	seq_printf(sfp, "cnt_tx_sup = %d\n", priv->dbg_stats.cnt_tx_sup);
 	seq_printf(sfp, "disable SV Frame = %d\n", priv->disable_sv_frame);
