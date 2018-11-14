@@ -2107,7 +2107,8 @@ static irqreturn_t emac_rx_thread(int irq, void *dev_id)
 		if (status & PRUETH_PACKET_DISCARD_OVFL) {
 			emac->rx_overflows++;
 			if (PRUETH_HAS_SWITCH(prueth)) {
-				other_emac = prueth->emac[emac->port_id ^ 0x3];
+				other_emac =
+					prueth->emac[(emac->port_id ^ 0x3) - 1];
 				other_emac->rx_overflows++;
 			}
 		}
