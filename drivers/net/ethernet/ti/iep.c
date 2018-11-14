@@ -42,12 +42,68 @@
 #define SYNC1_RESET    (0x0c0 | IEP_SYNC1_EN)
 #define SYNCX_RESET(x) (x ? SYNC1_RESET : SYNC0_RESET)
 
-#define PRUSS_IEP_CMP_REG0_OFFSET(c)                  \
-	((c) < 8 ? (PRUSS_IEP_CMP0_REG0 + (c) * 8) :      \
-		 (PRUSS_IEP_CMP8_REG0 + ((c) - 8) * 8))
+#define PRUSS_IEP32_REG_SIZE    4
+#define PRUSS_IEP64_REG_SIZE    8
+#define PRUSS_IEP32_CMP_REG0_OFFSET(c)                  \
+	((c) < 8 ? (PRUSS_IEP32_CMP0_REG0 + (c) * PRUSS_IEP32_REG_SIZE) :  \
+		 (PRUSS_IEP32_CMP8_REG0 + ((c) - 8) * PRUSS_IEP32_REG_SIZE))
+#define PRUSS_IEP64_CMP_REG0_OFFSET(c)                  \
+	((c) < 8 ? (PRUSS_IEP64_CMP0_REG0 + (c) * PRUSS_IEP64_REG_SIZE) :  \
+		 (PRUSS_IEP64_CMP8_REG0 + ((c) - 8) * PRUSS_IEP64_REG_SIZE))
 
-#define PRUSS_IEP_SYNC_STAT_REG_OFFSET(sync)             \
-	((sync) > 0 ? PRUSS_IEP_SYNC1_STAT_REG : PRUSS_IEP_SYNC0_STAT_REG)
+struct iep_regs_ofs iep_regs_ofs_v1_0 = {
+	.global_cfg = PRUSS_IEP32_GLOBAL_CFG,
+	.compensation = PRUSS_IEP32_COMPENSATION,
+	.count_reg = PRUSS_IEP32_COUNT_REG0,
+	.capture_cfg_reg = PRUSS_IEP32_CAPTURE_CFG_REG,
+	.capture_stat_reg = PRUSS_IEP32_CAPTURE_STAT_REG,
+
+	.cap6_rise_reg = PRUSS_IEP32_CAP6_RISE_REG0,
+	.cap6_fall_reg = PRUSS_IEP32_CAP6_FALL_REG0,
+
+	.cap7_rise_reg = PRUSS_IEP32_CAP7_RISE_REG0,
+	.cap7_fall_reg = PRUSS_IEP32_CAP7_FALL_REG0,
+
+	.cmp_cfg_reg = PRUSS_IEP32_CMP_CFG_REG,
+	.cmp_stat_reg = PRUSS_IEP32_CMP_STAT_REG,
+	.cmp0_reg = PRUSS_IEP32_CMP0_REG0,
+
+	.cmp8_reg = PRUSS_IEP32_CMP8_REG0,
+	.sync_ctrl_reg = PRUSS_IEP32_SYNC_CTRL_REG,
+	.sync0_stat_reg = PRUSS_IEP32_SYNC0_STAT_REG,
+	.sync1_stat_reg = PRUSS_IEP32_SYNC1_STAT_REG,
+	.sync_pwidth_reg = PRUSS_IEP32_SYNC_PWIDTH_REG,
+	.sync0_period_reg = PRUSS_IEP32_SYNC0_PERIOD_REG,
+	.sync1_delay_reg = PRUSS_IEP32_SYNC1_DELAY_REG,
+	.sync_start_reg = PRUSS_IEP32_SYNC_START_REG
+};
+
+struct iep_regs_ofs iep_regs_ofs_v2_1 = {
+	.global_cfg = PRUSS_IEP64_GLOBAL_CFG,
+	.compensation = PRUSS_IEP64_COMPENSATION,
+	.count_reg = PRUSS_IEP64_COUNT_REG0,
+	.capture_cfg_reg = PRUSS_IEP64_CAPTURE_CFG_REG,
+	.capture_stat_reg = PRUSS_IEP64_CAPTURE_STAT_REG,
+
+	.cap6_rise_reg = PRUSS_IEP64_CAP6_RISE_REG0,
+	.cap6_fall_reg = PRUSS_IEP64_CAP6_FALL_REG0,
+
+	.cap7_rise_reg = PRUSS_IEP64_CAP7_RISE_REG0,
+	.cap7_fall_reg = PRUSS_IEP64_CAP7_FALL_REG0,
+
+	.cmp_cfg_reg = PRUSS_IEP64_CMP_CFG_REG,
+	.cmp_stat_reg = PRUSS_IEP64_CMP_STAT_REG,
+	.cmp0_reg = PRUSS_IEP64_CMP0_REG0,
+
+	.cmp8_reg = PRUSS_IEP64_CMP8_REG0,
+	.sync_ctrl_reg = PRUSS_IEP64_SYNC_CTRL_REG,
+	.sync0_stat_reg = PRUSS_IEP64_SYNC0_STAT_REG,
+	.sync1_stat_reg = PRUSS_IEP64_SYNC1_STAT_REG,
+	.sync_pwidth_reg = PRUSS_IEP64_SYNC_PWIDTH_REG,
+	.sync0_period_reg = PRUSS_IEP64_SYNC0_PERIOD_REG,
+	.sync1_delay_reg = PRUSS_IEP64_SYNC1_DELAY_REG,
+	.sync_start_reg = PRUSS_IEP64_SYNC_START_REG
+};
 
 static inline u32 iep_read_reg(struct iep *iep, unsigned int reg)
 {
@@ -75,39 +131,61 @@ static inline void iep_disable_sync(struct iep *iep, int sync)
 	u32 sync_ctrl;
 
 	/* disable syncX */
-	sync_ctrl = iep_read_reg(iep, PRUSS_IEP_SYNC_CTRL_REG);
+	sync_ctrl = iep_read_reg(iep, iep->reg_ofs.sync_ctrl_reg);
 	sync_ctrl &= ~SYNCX_RESET(sync);
 
 	if (!(sync_ctrl & (IEP_SYNC0_EN | IEP_SYNC1_EN)))
 		sync_ctrl &= ~IEP_SYNC_EN;
 
-	iep_write_reg(iep, PRUSS_IEP_SYNC_CTRL_REG, sync_ctrl);
+	iep_write_reg(iep, iep->reg_ofs.sync_ctrl_reg, sync_ctrl);
 
 	/* clear syncX status: Wr1Clr */
-	iep_write_reg(iep, PRUSS_IEP_SYNC_STAT_REG_OFFSET(sync), 1);
+	if (sync > 0)
+		iep_write_reg(iep, iep->reg_ofs.sync1_stat_reg, 1);
+	else
+		iep_write_reg(iep, iep->reg_ofs.sync0_stat_reg, 1);
 }
 
 static inline void iep_enable_sync(struct iep *iep, int sync)
 {
 	/* enable syncX 1-shot mode */
-	iep_write_reg(iep, PRUSS_IEP_SYNC_CTRL_REG,
+	iep_write_reg(iep, iep->reg_ofs.sync_ctrl_reg,
 		      IEP_SYNCX_EN(sync) | IEP_SYNC_EN);
 }
 
 /* 0 <= cmp <= 15 */
-static inline u64 iep_get_cmp(struct iep *iep, int cmp)
+static inline u64 iep_get_cmp32(struct iep *iep, int cmp)
+{
+	u32 v;
+
+	memcpy_fromio(&v, iep->iep_reg + PRUSS_IEP32_CMP_REG0_OFFSET(cmp),
+		      sizeof(v));
+	return (u64)v;
+}
+
+/* 0 <= cmp <= 15 */
+static inline u64 iep_get_cmp64(struct iep *iep, int cmp)
 {
 	u64 v;
 
-	memcpy_fromio(&v, iep->iep_reg + PRUSS_IEP_CMP_REG0_OFFSET(cmp),
+	memcpy_fromio(&v, iep->iep_reg + PRUSS_IEP64_CMP_REG0_OFFSET(cmp),
 		      sizeof(v));
 	return v;
 }
 
 /* 0 <= cmp <= 15 */
-static inline void iep_set_cmp(struct iep *iep, int cmp, u64 v)
+static inline void iep_set_cmp32(struct iep *iep, int cmp, u64 v)
 {
-	memcpy_toio(iep->iep_reg + PRUSS_IEP_CMP_REG0_OFFSET(cmp),
+	u32 v32 = v;
+
+	memcpy_toio(iep->iep_reg + PRUSS_IEP32_CMP_REG0_OFFSET(cmp),
+		    &v32, sizeof(v32));
+}
+
+/* 0 <= cmp <= 15 */
+static inline void iep_set_cmp64(struct iep *iep, int cmp, u64 v)
+{
+	memcpy_toio(iep->iep_reg + PRUSS_IEP64_CMP_REG0_OFFSET(cmp),
 		    &v, sizeof(v));
 }
 
@@ -116,12 +194,12 @@ static inline void iep_disable_cmp(struct iep *iep, int cmp)
 	u32 v;
 
 	/* disable CMPX */
-	v = iep_read_reg(iep, PRUSS_IEP_CMP_CFG_REG);
+	v = iep_read_reg(iep, iep->reg_ofs.cmp_cfg_reg);
 	v &= ~IEP_CMPX_EN(cmp);
-	iep_write_reg(iep, PRUSS_IEP_CMP_CFG_REG, v);
+	iep_write_reg(iep, iep->reg_ofs.cmp_cfg_reg, v);
 
 	/* clear CMPX status: Wr1Clr */
-	iep_write_reg(iep, PRUSS_IEP_CMP_STAT_REG, IEP_CMPX_HIT(cmp));
+	iep_write_reg(iep, iep->reg_ofs.cmp_stat_reg, IEP_CMPX_HIT(cmp));
 }
 
 static inline void iep_enable_cmp(struct iep *iep, int cmp)
@@ -129,9 +207,9 @@ static inline void iep_enable_cmp(struct iep *iep, int cmp)
 	u32 v;
 
 	/* enable CMP1 */
-	v = iep_read_reg(iep, PRUSS_IEP_CMP_CFG_REG);
+	v = iep_read_reg(iep, iep->reg_ofs.cmp_cfg_reg);
 	v |= IEP_CMPX_EN(cmp);
-	iep_write_reg(iep, PRUSS_IEP_CMP_CFG_REG, v);
+	iep_write_reg(iep, iep->reg_ofs.cmp_cfg_reg, v);
 }
 
 /* 0 <= latch <= 1 */
@@ -140,9 +218,9 @@ static inline void iep_enable_latch(struct iep *iep, unsigned int latch)
 	u32 v;
 
 	/* enable capture 6/7 in 1st event mode */
-	v = iep_read_reg(iep, PRUSS_IEP_CAPTURE_CFG_REG);
+	v = iep_read_reg(iep, iep->reg_ofs.capture_cfg_reg);
 	v |= (latch ? IEP_CAP7_EV_EN : IEP_CAP6_EV_EN);
-	iep_write_reg(iep, PRUSS_IEP_CAPTURE_CFG_REG, v);
+	iep_write_reg(iep, iep->reg_ofs.capture_cfg_reg, v);
 }
 
 /* 0 <= latch <= 1 */
@@ -150,14 +228,14 @@ static inline void iep_disable_latch(struct iep *iep, unsigned int latch)
 {
 	u32 v;
 
-	v = iep_read_reg(iep, PRUSS_IEP_CAPTURE_CFG_REG);
+	v = iep_read_reg(iep, iep->reg_ofs.capture_cfg_reg);
 	v &= ~(latch ? IEP_CAP7_EV_EN : IEP_CAP6_EV_EN);
-	iep_write_reg(iep, PRUSS_IEP_CAPTURE_CFG_REG, v);
+	iep_write_reg(iep, iep->reg_ofs.capture_cfg_reg, v);
 }
 
 static inline u32 iep_get_latch_status(struct iep *iep)
 {
-	return iep_read_reg(iep, PRUSS_IEP_CAPTURE_STAT_REG);
+	return iep_read_reg(iep, iep->reg_ofs.capture_stat_reg);
 }
 
 /* 0 <= latch <= 1 */
@@ -165,18 +243,34 @@ static inline u64 iep_get_latch_ts(struct iep *iep, unsigned int latch)
 {
 	u64 v;
 	u32 cap_reg = (latch ?
-		       PRUSS_IEP_CAP7_RISE_REG0 :
-		       PRUSS_IEP_CAP6_RISE_REG0);
+		       iep->reg_ofs.cap6_rise_reg :
+		       iep->reg_ofs.cap6_rise_reg);
 
 	memcpy_fromio(&v, iep->iep_reg + cap_reg, sizeof(v));
 	return v;
 }
 
-static inline u64 iep_get_count(struct iep *iep)
+static inline u64 iep_get_count32(struct iep *iep)
 {
-	u64 v;
+	u32 v_ns = 0;
+	u64 v_sec = 0;
+	u64 v = 0;
+	void __iomem *sram = iep->sram;
 
-	memcpy_fromio(&v, iep->iep_reg + PRUSS_IEP_COUNT_REG0, 8);
+	memcpy_fromio(&v_ns, iep->iep_reg + iep->reg_ofs.count_reg, 4);
+	memcpy_fromio(&v_sec, sram + TIMESYNC_SECONDS_COUNT_OFFSET,
+		      TIMESYNC_SECONDS_COUNT_SIZE);
+	v = (v_sec * NSEC_PER_SEC) + v_ns;
+
+	return v;
+}
+
+static inline u64 iep_get_count64(struct iep *iep)
+{
+	u64 v = 0;
+
+	memcpy_fromio(&v, iep->iep_reg + iep->reg_ofs.count_reg, 8);
+
 	return v;
 }
 
@@ -184,7 +278,7 @@ static u64 iep_cc_read(const struct cyclecounter *cc)
 {
 	struct iep *iep = container_of(cc, struct iep, cc);
 
-	return iep_get_count(iep);
+	return iep->iep_get_count(iep);
 }
 
 /* Implementation is good for 1 sec or less */
@@ -237,15 +331,15 @@ static int iep_adjfreq(struct ptp_clock_info *ptp, s32 ppb)
 			/* if the previous HIT is not reported yet,
 			 * skip update
 			 */
-			v = iep_read_reg(iep, PRUSS_IEP_CMP_STAT_REG);
+			v = iep_read_reg(iep, iep->reg_ofs.cmp_stat_reg);
 
 			if ((iep->pps[0].enable != -1) &&
 			    !(v & IEP_CMPX_HIT(PPS_CMP(0))))
-				iep_set_cmp(iep, PPS_CMP(0), cmp_val);
+				iep->iep_set_cmp(iep, PPS_CMP(0), cmp_val);
 
 			if ((iep->pps[1].enable != -1) &&
 			    !(v & IEP_CMPX_HIT(PPS_CMP(1))))
-				iep_set_cmp(iep, PPS_CMP(1), cmp_val);
+				iep->iep_set_cmp(iep, PPS_CMP(1), cmp_val);
 		}
 	}
 
@@ -317,7 +411,7 @@ static inline void iep_pps_stop(struct iep *iep, unsigned int pps)
 {
 	iep_disable_sync(iep, PPS_SYNC(pps));
 	iep_disable_cmp(iep, PPS_CMP(pps));
-	iep_set_cmp(iep, PPS_CMP(pps), 0);
+	iep->iep_set_cmp(iep, PPS_CMP(pps), 0);
 }
 
 /* 0 <= pps <= 1 */
@@ -386,7 +480,7 @@ static int iep_pps_enable(struct iep *iep, unsigned int pps, int on)
 	cmp_val = iep->tc.cycle_last + cyc_to_sec_bd;
 
 	/* how many ticks has elapsed since last time */
-	cyc_last2 = (u64)iep_get_count(iep);
+	cyc_last2 = (u64)iep->iep_get_count(iep);
 
 	/* if it is too close to sec boundary, start 1 sec later */
 	/* +++TODO: tune this randomly fixed 10 ticks allowance */
@@ -394,7 +488,7 @@ static int iep_pps_enable(struct iep *iep, unsigned int pps, int on)
 		cmp_val += cyc_per_sec;
 
 	pinctrl_select_state(iep->pins, iep->pps[pps].pin_on);
-	iep_set_cmp(iep, PPS_CMP(pps), cmp_val);
+	iep->iep_set_cmp(iep, PPS_CMP(pps), cmp_val);
 	iep_pps_start(iep, pps);
 
 	spin_unlock_irqrestore(&iep->ptp_lock, flags);
@@ -415,22 +509,22 @@ static int iep_pps_init(struct iep *iep)
 	/* Following are one time configurations */
 
 	/* config sync0/1 pulse width to 10 ms, ie 2000000 cycles */
-	iep_write_reg(iep, PRUSS_IEP_SYNC_PWIDTH_REG, IEP_DEFAULT_PPS_WIDTH);
+	iep_write_reg(iep, iep->reg_ofs.sync_pwidth_reg, IEP_DEFAULT_PPS_WIDTH);
 
 	/* set SYNC start to 0, ie., no delay after activation. */
-	iep_write_reg(iep, PRUSS_IEP_SYNC_START_REG, 0);
+	iep_write_reg(iep, iep->reg_ofs.sync_start_reg, 0);
 
 	/* makes sure SYNC0 period is 0 */
-	iep_write_reg(iep, PRUSS_IEP_SYNC0_PERIOD_REG, 0);
+	iep_write_reg(iep, iep->reg_ofs.sync0_period_reg, 0);
 
 	/* set sync1 to independent mode */
-	iep_write_reg(iep, PRUSS_IEP_SYNC_CTRL_REG, IEP_SYNC1_IND_EN);
+	iep_write_reg(iep, iep->reg_ofs.sync_ctrl_reg, IEP_SYNC1_IND_EN);
 
 	/* makes sure SYNC1 period is 0.
 	 * when sync1 is independent mode, SYNC1_DELAY_REG
 	 * val is SYNC1 period.
 	 */
-	iep_write_reg(iep, PRUSS_IEP_SYNC1_DELAY_REG, 0);
+	iep_write_reg(iep, iep->reg_ofs.sync1_delay_reg, 0);
 
 	for (i = 0; i < MAX_PPS; i++) {
 		iep->pps[i].enable = -1;
@@ -534,10 +628,10 @@ static bool iep_pps_report(struct iep *iep, int pps)
 	u64 cmp_val, ns;
 	u32 v, reported = 0;
 
-	v = iep_read_reg(iep, PRUSS_IEP_CMP_STAT_REG);
+	v = iep_read_reg(iep, iep->reg_ofs.cmp_stat_reg);
 	if (v & IEP_CMPX_HIT(PPS_CMP(pps))) {
 		/* write 1 to clear CMP status */
-		iep_write_reg(iep, PRUSS_IEP_CMP_STAT_REG,
+		iep_write_reg(iep, iep->reg_ofs.cmp_stat_reg,
 			      IEP_CMPX_HIT(PPS_CMP(pps)));
 
 		/* A pulse has occurred. Post the event only if
@@ -545,7 +639,7 @@ static bool iep_pps_report(struct iep *iep, int pps)
 		 * Otherwise, just increment the count without
 		 * posting event.
 		 */
-		cmp_val = iep_get_cmp(iep, PPS_CMP(pps));
+		cmp_val = iep->iep_get_cmp(iep, PPS_CMP(pps));
 		ns = timecounter_cyc2time(&iep->tc, cmp_val);
 		pevent.type = PTP_CLOCK_PPSUSR;
 		pevent.pps_times.ts_real = ns_to_timespec64(ns);
@@ -696,7 +790,7 @@ static long iep_overflow_check(struct ptp_clock_info *ptp)
 			continue;
 
 		p = &iep->pps[pps];
-		iep_set_cmp(iep, PPS_CMP(pps), cmp_val);
+		iep->iep_set_cmp(iep, PPS_CMP(pps), cmp_val);
 		if (p->next_op >= 0)
 			/* some ops have not been performed
 			 * put this one in the queue
@@ -730,15 +824,39 @@ void iep_reset_timestamp(struct iep *iep, u16 ts_ofs)
 	memset_io(iep->sram + ts_ofs, 0, sizeof(u64));
 }
 
+u64 iep_get_timestamp_cycles32(struct iep *iep, u16 ts_ofs)
+{
+	void __iomem *sram = iep->sram;
+	u64 cycles, cycles_sec = 0;
+	u32 cycles_ns;
+
+	memcpy_fromio(&cycles_ns, sram + ts_ofs, sizeof(cycles_ns));
+	memcpy_fromio(&cycles_sec, sram + ts_ofs + 4, sizeof(cycles_sec));
+	memset_io(sram + ts_ofs, 0, sizeof(cycles_ns));
+	memset_io(sram + ts_ofs + 4, 0, sizeof(cycles_sec));
+	cycles = cycles_ns + (cycles_sec * NSEC_PER_SEC);
+
+	return cycles;
+}
+
+u64 iep_get_timestamp_cycles64(struct iep *iep, u16 ts_ofs)
+{
+	void __iomem *sram = iep->sram;
+	u64 cycles;
+
+	memcpy_fromio(&cycles, sram + ts_ofs, sizeof(cycles));
+	memset_io(sram + ts_ofs, 0, sizeof(cycles));
+
+	return cycles;
+}
+
 int iep_rx_timestamp(struct iep *iep, u16 ts_ofs, struct sk_buff *skb)
 {
 	struct skb_shared_hwtstamps *ssh;
-	void __iomem *sram = iep->sram;
 	u64 ns, cycles;
 
 	/* get timestamp */
-	memcpy_fromio(&cycles, sram + ts_ofs, sizeof(cycles));
-	memset_io(sram + ts_ofs, 0, sizeof(cycles));
+	cycles = iep->iep_get_timestamp_cycles(iep, ts_ofs);
 
 	if (!cycles)
 		return -ENOENT;
@@ -748,7 +866,6 @@ int iep_rx_timestamp(struct iep *iep, u16 ts_ofs, struct sk_buff *skb)
 	ssh = skb_hwtstamps(skb);
 	memset(ssh, 0, sizeof(*ssh));
 	ssh->hwtstamp = ns_to_ktime(ns);
-
 	return 0;
 }
 
@@ -756,12 +873,10 @@ int iep_tx_timestamp(struct iep *iep, u16 ts_ofs, struct sk_buff *skb,
 		     unsigned long tmo)
 {
 	struct skb_shared_hwtstamps ssh;
-	void __iomem *sram = iep->sram;
 	u64 ns, cycles;
 
 	/* get timestamp */
-	memcpy_fromio(&cycles, sram + ts_ofs, sizeof(cycles));
-	memset_io(sram + ts_ofs, 0, sizeof(cycles));
+	cycles = iep->iep_get_timestamp_cycles(iep, ts_ofs);
 
 	if (!cycles)
 		return -ENOENT;
@@ -775,18 +890,15 @@ int iep_tx_timestamp(struct iep *iep, u16 ts_ofs, struct sk_buff *skb,
 	memset(&ssh, 0, sizeof(ssh));
 	ssh.hwtstamp = ns_to_ktime(ns);
 	skb_tstamp_tx(skb, &ssh);
-
 	return 0;
 }
 
 int iep_get_timestamp(struct iep *iep, u16 ts_ofs, u64 *ns)
 {
-	void __iomem *sram = iep->sram;
 	u64 cycles;
 
 	/* get timestamp */
-	memcpy_fromio(&cycles, sram + ts_ofs, sizeof(cycles));
-	memset_io(sram + ts_ofs, 0, sizeof(cycles));
+	cycles = iep->iep_get_timestamp_cycles(iep, ts_ofs);
 
 	if (!cycles) {
 		*ns = 0;
@@ -868,16 +980,31 @@ static int iep_config(struct iep *iep)
 	/* Reset IEP count to 0 before enabling compare config regs
 	 * This ensures that we don't hit CMP1 with a large value in IEP
 	 */
-	iep_write_reg(iep, PRUSS_IEP_COUNT_REG0, 0);
-	iep_write_reg(iep, PRUSS_IEP_COUNT_REG1, 0);
+	iep_write_reg(iep, iep->reg_ofs.count_reg, 0);
+	if (iep->rev == IEP_REV_V2_1)
+		iep_write_reg(iep, iep->reg_ofs.count_reg + 4, 0);
+
+	if (iep->rev == IEP_REV_V1_0) {
+		/* Enable reset */
+		iep_enable_cmp(iep, -1);
+		 /* Set and enable compare 0 */
+		iep->iep_set_cmp(iep, 0, NSEC_PER_SEC);
+		iep_enable_cmp(iep, 0);
+	}
 
 	return 0;
 }
 
 static inline void iep_start(struct iep *iep)
 {
-	iep_set_reg(iep, PRUSS_IEP_GLOBAL_CFG,
-		    IEP_GLOBAL_CFG_REG_MASK, IEP_GLOBAL_CFG_REG_PTP_VAL);
+	if (iep->rev == IEP_REV_V1_0)
+		iep_set_reg(iep, iep->reg_ofs.global_cfg,
+			    IEP_GLOBAL_CFG_REG_MASK,
+			    IEP_GLOBAL_CFG_REG_INCR5_VAL);
+	else
+		iep_set_reg(iep, iep->reg_ofs.global_cfg,
+			    IEP_GLOBAL_CFG_REG_MASK,
+			    IEP_GLOBAL_CFG_REG_INCR1_VAL);
 }
 
 static inline void iep_time_sync_start(struct iep *iep)
@@ -1020,13 +1147,28 @@ static int iep_get_pps_extts_pins(struct iep *iep)
 }
 
 struct iep *iep_create(struct device *dev, void __iomem *sram,
-		       void __iomem *iep_reg, int pruss_id)
+		       void __iomem *iep_reg, int pruss_id, int rev)
 {
 	struct iep *iep;
 
 	iep = devm_kzalloc(dev, sizeof(*iep), GFP_KERNEL);
 	if (!iep)
 		return ERR_PTR(-ENOMEM);
+
+	iep->rev = rev;
+	if (iep->rev == IEP_REV_V1_0) {
+		iep->reg_ofs = iep_regs_ofs_v1_0;
+		iep->iep_get_count = iep_get_count32;
+		iep->iep_get_cmp = iep_get_cmp32;
+		iep->iep_set_cmp = iep_set_cmp32;
+		iep->iep_get_timestamp_cycles = iep_get_timestamp_cycles32;
+	} else {
+		iep->reg_ofs = iep_regs_ofs_v2_1;
+		iep->iep_get_count = iep_get_count64;
+		iep->iep_get_cmp = iep_get_cmp64;
+		iep->iep_set_cmp = iep_set_cmp64;
+		iep->iep_get_timestamp_cycles = iep_get_timestamp_cycles64;
+	}
 
 	iep->dev = dev;
 	iep->sram = sram;
@@ -1036,7 +1178,10 @@ struct iep *iep_create(struct device *dev, void __iomem *sram,
 	iep->ov_check_period_slow = iep->ov_check_period;
 
 	iep->cc.shift = IEP_TC_DEFAULT_SHIFT;
-	iep->cc.mult = IEP_TC_DEFAULT_MULT;
+	if (iep->rev == IEP_REV_V1_0)
+		iep->cc.mult = IEP_TC_INCR5_MULT;
+	else
+		iep->cc.mult = IEP_TC_INCR1_MULT;
 	iep->cc.read = iep_cc_read;
 	iep->cc.mask = CLOCKSOURCE_MASK(64);
 	iep->info = iep_info;

@@ -5057,7 +5057,8 @@ static int prueth_probe(struct platform_device *pdev)
 	prueth->iep = iep_create(prueth->dev,
 				 prueth->mem[PRUETH_MEM_SHARED_RAM].va,
 				 prueth->mem[PRUETH_MEM_IEP].va,
-				 prueth->pruss_id);
+				 prueth->pruss_id,
+				 prueth->fw_data->fw_rev);
 	if (IS_ERR(prueth->iep)) {
 		ret = PTR_ERR(prueth->iep);
 		goto netdev_exit;
@@ -5267,7 +5268,8 @@ static struct prueth_private_data am335x_prueth_pdata = {
 		.fw_name[PRUSS_ETHTYPE_PRP] =
 			"ti-pruss/am335x-pru1-pruprp-fw.elf"
 	},
-	.fw_rev = FW_REV_V1_0
+	.fw_rev = FW_REV_V1_0,
+	.ptp_support = 1
 };
 
 /* AM437x SoC-specific firmware data */
@@ -5289,7 +5291,8 @@ static struct prueth_private_data am437x_prueth_pdata = {
 		.fw_name[PRUSS_ETHTYPE_PRP] =
 			"ti-pruss/am437x-pru1-pruprp-fw.elf"
 	},
-	.fw_rev = FW_REV_V1_0
+	.fw_rev = FW_REV_V1_0,
+	.ptp_support = 1
 };
 
 /* AM57xx SoC-specific firmware data */
@@ -5334,7 +5337,8 @@ static struct prueth_private_data k2g_prueth_pdata = {
 		.fw_name[PRUSS_ETHTYPE_PRP] =
 			"ti-pruss/k2g-pru1-pruprp-fw.elf"
 	},
-	.fw_rev = FW_REV_V2_1
+	.fw_rev = FW_REV_V2_1,
+	.ptp_support = 1
 };
 
 static const struct of_device_id prueth_dt_match[] = {
