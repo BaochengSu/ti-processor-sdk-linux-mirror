@@ -3765,7 +3765,7 @@ static void prueth_set_rx_mode(struct prueth_emac *emac)
 	struct netdev_hw_addr *ha;
 	u8 hash;
 
-	if (prueth->eth_type == 0) {
+	if (PRUETH_IS_EMAC(prueth)) {
 		ram = (emac->port_id == PRUETH_PORT_MII0) ?
 				prueth->mem[PRUETH_MEM_DRAM0].va :
 				prueth->mem[PRUETH_MEM_DRAM1].va;
@@ -3936,14 +3936,20 @@ static int emac_add_del_vid(struct prueth_emac *emac,
 			    bool add, __be16 proto, u16 vid)
 {
 	struct prueth *prueth = emac->prueth;
-	void __iomem *ram = (emac->port_id == PRUETH_PORT_MII0) ?
-				prueth->mem[PRUETH_MEM_DRAM0].va :
-				prueth->mem[PRUETH_MEM_DRAM1].va;
+	void __iomem *ram;
 	u16 index = ((vid >> 3) & 0x1ff);
 	unsigned long flags;
 	u8 val;
 	u32 vlan_ctrl_byte = prueth->fw_offsets->vlan_ctrl_byte;
 	u32 vlan_filter_tbl = prueth->fw_offsets->vlan_filter_tbl;
+
+	if (PRUETH_IS_EMAC(prueth)) {
+		ram = (emac->port_id == PRUETH_PORT_MII0) ?
+				prueth->mem[PRUETH_MEM_DRAM0].va :
+				prueth->mem[PRUETH_MEM_DRAM1].va;
+	} else {
+		ram = prueth->mem[PRUETH_MEM_SHARED_RAM].va;
+	}
 
 	if (proto != htons(ETH_P_8021Q))
 		return -EINVAL;

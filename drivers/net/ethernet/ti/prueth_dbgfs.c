@@ -234,13 +234,19 @@ prueth_vlan_filter_show(struct seq_file *sfp, void *data)
 {
 	struct prueth_emac *emac = (struct prueth_emac *)sfp->private;
 	struct prueth *prueth = emac->prueth;
-	void __iomem *ram = (emac->port_id == PRUETH_PORT_MII0) ?
-				prueth->mem[PRUETH_MEM_DRAM0].va :
-				prueth->mem[PRUETH_MEM_DRAM1].va;
+	void __iomem *ram;
 	u8 val, mask;
 	int i, j;
 	u32 vlan_ctrl_byte = prueth->fw_offsets->vlan_ctrl_byte;
 	u32 vlan_filter_tbl = prueth->fw_offsets->vlan_filter_tbl;
+
+	if (PRUETH_IS_EMAC(prueth)) {
+		ram = (emac->port_id == PRUETH_PORT_MII0) ?
+				prueth->mem[PRUETH_MEM_DRAM0].va :
+				prueth->mem[PRUETH_MEM_DRAM1].va;
+	} else {
+		ram = prueth->mem[PRUETH_MEM_SHARED_RAM].va;
+	}
 
 	val = readb(ram + vlan_ctrl_byte);
 	seq_printf(sfp, "VLAN Filter : %s",
