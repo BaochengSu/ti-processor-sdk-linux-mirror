@@ -51,6 +51,14 @@
 	((c) < 8 ? (PRUSS_IEP64_CMP0_REG0 + (c) * PRUSS_IEP64_REG_SIZE) :  \
 		 (PRUSS_IEP64_CMP8_REG0 + ((c) - 8) * PRUSS_IEP64_REG_SIZE))
 
+/* Polling period - how often iep_overflow_check() is called */
+#define IEP_OVERFLOW_CHECK_PERIOD_MS   50
+/* Range during which SYNC reset occurs - should be greater than
+ * IEP_OVERFLOW_CHECK_PERIOD_MS to ensure at least one check is caught
+ */
+#define IEP32_WRAPAROUND_SYNC_TIME_MS  80
+#define IEP32_WRAPAROUND_SYNC_TIME_NS  (IEP32_WRAPAROUND_SYNC_TIME_MS * 1000000)
+
 struct iep_regs_ofs iep_regs_ofs_v1_0 = {
 	.global_cfg = PRUSS_IEP32_GLOBAL_CFG,
 	.compensation = PRUSS_IEP32_COMPENSATION,
@@ -301,7 +309,7 @@ static int iep_adjfreq(struct ptp_clock_info *ptp, s32 ppb)
 	int neg_adj = 0;
 	unsigned long flags;
 	struct timespec64 ts;
-	u64 ns_to_sec, cyc_to_sec, cmp_val;
+	u64 ns_to_sec, cyc_to_sec, cmp_val, rem;
 
 	if (ppb < 0) {
 		neg_adj = 1;
@@ -328,6 +336,14 @@ static int iep_adjfreq(struct ptp_clock_info *ptp, s32 ppb)
 		/* if it's too late to update CMP1, skip it */
 		if (cyc_to_sec >= 10) {
 			cmp_val = iep->tc.cycle_last + cyc_to_sec;
+
+			if (iep->rev == IEP_REV_V1_0) {
+				if (cmp_val > NSEC_PER_SEC) {
+					rem = do_div(cmp_val, NSEC_PER_SEC);
+					cmp_val = rem;
+				}
+			}
+
 			/* if the previous HIT is not reported yet,
 			 * skip update
 			 */
@@ -426,7 +442,7 @@ static int iep_pps_enable(struct iep *iep, unsigned int pps, int on)
 {
 	unsigned long flags;
 	struct timespec64 ts;
-	u64 cyc_to_sec_bd, ns_to_sec_bd, cyc_per_sec, cyc_last2, cmp_val;
+	u64 cyc_to_sec_bd, ns_to_sec_bd, cyc_per_sec, cyc_last2, cmp_val, rem;
 	int *pps_en;
 
 	if (pps >= MAX_PPS)
@@ -486,6 +502,13 @@ static int iep_pps_enable(struct iep *iep, unsigned int pps, int on)
 	/* +++TODO: tune this randomly fixed 10 ticks allowance */
 	if (cmp_val <= cyc_last2 + 10)
 		cmp_val += cyc_per_sec;
+
+	if (iep->rev == IEP_REV_V1_0) {
+		if (cmp_val > NSEC_PER_SEC) {
+			rem = do_div(cmp_val, NSEC_PER_SEC);
+			cmp_val = rem;
+		}
+	}
 
 	pinctrl_select_state(iep->pins, iep->pps[pps].pin_on);
 	iep->iep_set_cmp(iep, PPS_CMP(pps), cmp_val);
@@ -662,7 +685,8 @@ static bool iep_pps_report(struct iep *iep, int pps)
 		 * before the sync0, then is found out in the next
 		 * check and is disabled in the check after the next.
 		 */
-		p->report_ops[++p->next_op] = OP_DISABLE_SYNC;
+		if (iep->rev == IEP_REV_V2_1)
+			p->report_ops[++p->next_op] = OP_DISABLE_SYNC;
 	}
 
 	return reported;
@@ -751,12 +775,25 @@ static long iep_overflow_check(struct ptp_clock_info *ptp)
 	struct timespec64 ts;
 	unsigned long flags;
 	unsigned int reported_mask = 0;
-	u64 ns_to_sec, cyc_to_sec, cmp_val;
+	u64 ns_to_sec, cyc_to_sec, cmp_val, rem;
 	struct pps *p;
 	int pps, n;
 
 	spin_lock_irqsave(&iep->ptp_lock, flags);
 	ts = ns_to_timespec64(timecounter_read(&iep->tc));
+
+	/* With 32-bit IEP, need to wait until wraparound (1 sec) to reset SYNC
+	 * signal or the SYNC pulse will occur again because the IEP is still
+	 * greater than CMP1. Below resets SYNC signal shortly before the next
+	 * pulse (CMP1 event). NOTE: This can still fail if CMP1 is very low and
+	 * this check resets SYNC before wraparound occurs.
+	 */
+	if (iep->rev == IEP_REV_V1_0 && iep->pps[0].enable) {
+		if (NSEC_PER_SEC - ts.tv_nsec < IEP32_WRAPAROUND_SYNC_TIME_NS) {
+			iep_disable_sync(iep, PPS_SYNC(0));
+			iep_enable_sync(iep, PPS_SYNC(0));
+		}
+	}
 
 	iep_proc_latch(iep);
 
@@ -785,13 +822,20 @@ static long iep_overflow_check(struct ptp_clock_info *ptp)
 	cyc_to_sec = iep_ns2cyc(iep, ns_to_sec);
 	cmp_val = iep->tc.cycle_last + cyc_to_sec;
 
+	if (iep->rev == IEP_REV_V1_0) {
+		if (cmp_val > NSEC_PER_SEC) {
+			rem = do_div(cmp_val, NSEC_PER_SEC);
+			cmp_val = rem;
+		}
+	}
+
 	for (pps = 0; pps < MAX_PPS; pps++) {
 		if (!(reported_mask & BIT(pps)))
 			continue;
 
 		p = &iep->pps[pps];
 		iep->iep_set_cmp(iep, PPS_CMP(pps), cmp_val);
-		if (p->next_op >= 0)
+		if (p->next_op >= 0 && iep->rev == IEP_REV_V2_1)
 			/* some ops have not been performed
 			 * put this one in the queue
 			 */
@@ -1174,7 +1218,7 @@ struct iep *iep_create(struct device *dev, void __iomem *sram,
 	iep->sram = sram;
 	iep->iep_reg = iep_reg;
 	spin_lock_init(&iep->ptp_lock);
-	iep->ov_check_period = msecs_to_jiffies(50);
+	iep->ov_check_period = msecs_to_jiffies(IEP_OVERFLOW_CHECK_PERIOD_MS);
 	iep->ov_check_period_slow = iep->ov_check_period;
 
 	iep->cc.shift = IEP_TC_DEFAULT_SHIFT;

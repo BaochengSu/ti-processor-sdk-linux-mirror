@@ -232,7 +232,7 @@
 	};
 
 	/* Dual-MAC Ethernet application node on PRU-ICSS0 */
-	pruss0_eth {
+	pruss0_eth: pruss0_eth {
 		compatible = "ti,k2g-prueth";
 		prus = <&pru0_0>, <&pru0_1>;
 		firmware-name = "ti-pruss/k2g-pru0-prueth-fw.elf",
@@ -264,7 +264,7 @@
 	};
 
 	/* Dual-MAC Ethernet application node on PRU-ICSS1 */
-	pruss1_eth {
+	pruss1_eth: pruss1_eth {
 		compatible = "ti,k2g-prueth";
 		prus = <&pru1_0>, <&pru1_1>;
 		firmware-name = "ti-pruss/k2g-pru0-prueth-fw.elf",
