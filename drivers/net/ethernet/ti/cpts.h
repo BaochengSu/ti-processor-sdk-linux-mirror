@@ -164,6 +164,7 @@ struct cpts {
 	u64 hw_timestamp;
 	u32 pps_latch_offset;
 	int pps_offset;
+	spinlock_t bc_mux_lock; /* protect mux control gpio (pps_enable_gpio) */
 
 	struct pinctrl *pins;
 	struct pinctrl_state *pin_state_pwm_off;

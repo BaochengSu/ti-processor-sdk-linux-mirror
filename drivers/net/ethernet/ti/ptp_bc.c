@@ -31,7 +31,9 @@ static bool ptp_bc_initialized;
 static int clock_type[MAX_CLKS];
 static int bc_clk_pps_mux_sel0_gpio;
 static int bc_clk_pps_mux_sel1_gpio;
-
+static ptp_bc_mux_ctrl_handle_t bc_mux_ctrl_handler;
+static void *bc_mux_ctrl_ctx;
+static spinlock_t *bc_mux_lock;
 
 static inline int bc_clock_is_registered(int clkid)
 {
@@ -60,8 +62,18 @@ static void ptp_bc_free_clk_id(int clkid)
 
 static void ptp_bc_clock_pps_mux_reset(void)
 {
+	if (bc_mux_ctrl_handler) {
+		spin_lock_bh(bc_mux_lock);
+		bc_mux_ctrl_handler(bc_mux_ctrl_ctx, false);
+	}
+
 	gpio_set_value(bc_clk_pps_mux_sel0_gpio, 0);
 	gpio_set_value(bc_clk_pps_mux_sel1_gpio, 0);
+
+	if (bc_mux_ctrl_handler) {
+		bc_mux_ctrl_handler(bc_mux_ctrl_ctx, true);
+		spin_unlock_bh(bc_mux_lock);
+	}
 }
 
 static void ptp_bc_clock_pps_mux_sel(int clkid)
@@ -69,6 +81,11 @@ static void ptp_bc_clock_pps_mux_sel(int clkid)
 	if (clkid < 0 || clkid >= MAX_CLKS) {
 		pr_err("ptp_bc_clock_pps_mux_sel: invalid clkid: %d\n", clkid);
 		return;
+	}
+
+	if (bc_mux_ctrl_handler) {
+		spin_lock_bh(bc_mux_lock);
+		bc_mux_ctrl_handler(bc_mux_ctrl_ctx, false);
 	}
 
 	switch (clock_type[clkid]) {
@@ -92,6 +109,12 @@ static void ptp_bc_clock_pps_mux_sel(int clkid)
 		       clkid, clock_type[clkid]);
 		break;
 	}
+
+	if (bc_mux_ctrl_handler) {
+		bc_mux_ctrl_handler(bc_mux_ctrl_ctx, true);
+		spin_unlock_bh(bc_mux_lock);
+	}
+
 }
 
 bool ptp_bc_clock_sync_enable(int clkid, int enable)
@@ -178,6 +201,15 @@ void ptp_bc_clock_unregister(int clkid)
 	spin_unlock_irqrestore(&bc_sync_lock, flags);
 }
 EXPORT_SYMBOL_GPL(ptp_bc_clock_unregister);
+
+void ptp_bc_mux_ctrl_register(void *ctx, spinlock_t *lock,
+			      ptp_bc_mux_ctrl_handle_t handler)
+{
+	bc_mux_ctrl_handler = handler;
+	bc_mux_ctrl_ctx = ctx;
+	bc_mux_lock = lock;
+}
+EXPORT_SYMBOL_GPL(ptp_bc_mux_ctrl_register);
 
 static int ptp_bc_probe(struct platform_device *pdev)
 {

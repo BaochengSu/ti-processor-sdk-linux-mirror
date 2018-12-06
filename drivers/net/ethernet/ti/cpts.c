@@ -111,6 +111,7 @@ static irqreturn_t cpts_1pps_latch_interrupt(int irq, void *dev_id);
 static void cpts_tmr_poll(struct cpts *cpts, bool cpts_poll);
 static void cpts_pps_schedule(struct cpts *cpts);
 static inline void cpts_latch_pps_stop(struct cpts *cpts);
+static void cpts_bc_mux_ctrl(void *ctx, int enable);
 #endif
 
 static int cpts_event_port(struct cpts_event *event)
@@ -478,7 +479,9 @@ static int cpts_pps_enable(struct cpts *cpts, int on)
 	if (!on)
 		return 0;
 
+	spin_lock_bh(&cpts->bc_mux_lock);
 	gpio_set_value(cpts->pps_enable_gpio, 1);
+	spin_unlock_bh(&cpts->bc_mux_lock);
 
 	if (cpts->ref_enable == -1) {
 		cpts_pps_start(cpts);
@@ -520,6 +523,8 @@ static int cpts_pps_init(struct cpts *cpts)
 	cpts->ref_enable = -1;
 	cpts->pps_offset = 0;
 
+	spin_lock_init(&cpts->bc_mux_lock);
+
 #ifdef CONFIG_OMAP_DM_TIMER
 	omap_dm_timer_enable(cpts->odt);
 	omap_dm_timer_enable(cpts->odt2);
@@ -554,7 +559,9 @@ static void cpts_pps_schedule(struct cpts *cpts)
 			cpts->pps_enable = -1;
 			pinctrl_select_state(cpts->pins,
 					     cpts->pin_state_pwm_off);
+			spin_lock_bh(&cpts->bc_mux_lock);
 			gpio_set_value(cpts->pps_enable_gpio, 0);
+			spin_unlock_bh(&cpts->bc_mux_lock);
 		}
 
 		if (!cpts->ref_enable) {
@@ -866,10 +873,12 @@ int cpts_register(struct cpts *cpts)
 	cpts_write32(cpts, cpts_read32(cpts, control) |
 		     HW4_TS_PUSH_EN, control);
 
-	if (cpts->use_1pps)
+	if (cpts->use_1pps) {
 		cpts->bc_clkid = ptp_bc_clock_register(PTP_BC_CLOCK_TYPE_GMAC);
-
-	pr_info("cpts ptp bc clkid %d\n", cpts->bc_clkid);
+		pr_info("cpts ptp bc clkid %d\n", cpts->bc_clkid);
+		ptp_bc_mux_ctrl_register((void *)cpts, &cpts->bc_mux_lock,
+					 cpts_bc_mux_ctrl);
+	}
 #endif
 	return 0;
 
@@ -1243,6 +1252,27 @@ void cpts_release(struct cpts *cpts)
 EXPORT_SYMBOL_GPL(cpts_release);
 
 #ifdef CONFIG_TI_1PPS_DM_TIMER
+/* This function will be invoked by the PTP BC module in a pair
+ * to disable and then re-enable the BC pps clock multiplexer
+ * only if it is enabled during the initial call (enable = 0).
+ * And the spin lock bc_mux_lock should be invoked to protect
+ * the entire procedure.
+ */
+static void cpts_bc_mux_ctrl(void *ctx, int enable)
+{
+	struct cpts *cpts = (struct cpts *)ctx;
+	static int state;
+
+	if (enable) {
+		if (!state)
+			gpio_set_value(cpts->pps_enable_gpio, 0);
+	} else {
+		state = gpio_get_value(cpts->pps_enable_gpio);
+		if (!state)
+			gpio_set_value(cpts->pps_enable_gpio, 1);
+	}
+}
+
 static u64 cpts_ts_read(struct cpts *cpts)
 {
 	u64 ns = 0;
@@ -1369,7 +1399,9 @@ static void inline cpts_turn_on_off_1pps_output(struct cpts *cpts, u64 ts)
 		if (cpts->pps_enable == 1) {
 			pinctrl_select_state(cpts->pins,
 					     cpts->pin_state_pwm_on);
+			spin_lock_bh(&cpts->bc_mux_lock);
 			gpio_set_value(cpts->pps_enable_gpio, 0);
+			spin_unlock_bh(&cpts->bc_mux_lock);
 		}
 
 		if (cpts->ref_enable == 1) {
@@ -1383,7 +1415,9 @@ static void inline cpts_turn_on_off_1pps_output(struct cpts *cpts, u64 ts)
 		if (cpts->pps_enable == 1) {
 			pinctrl_select_state(cpts->pins,
 					     cpts->pin_state_pwm_off);
+			spin_lock_bh(&cpts->bc_mux_lock);
 			gpio_set_value(cpts->pps_enable_gpio, 1);
+			spin_unlock_bh(&cpts->bc_mux_lock);
 		}
 
 		if (cpts->ref_enable == 1) {
