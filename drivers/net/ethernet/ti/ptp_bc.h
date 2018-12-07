@@ -53,7 +53,7 @@ static bool ptp_bc_clock_sync_enable(int clkid, int enable)
 }
 
 static void ptp_bc_mux_ctrl_register(void *ctx, spinlock_t *lock,
-				     ptp_bc_mux_ctrl_handle_t handler);
+				     ptp_bc_mux_ctrl_handle_t handler)
 {
 }
 #endif
