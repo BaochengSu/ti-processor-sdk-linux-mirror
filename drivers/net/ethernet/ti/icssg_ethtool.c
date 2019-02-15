@@ -265,16 +265,37 @@ static void emac_get_ethtool_stats(struct net_device *ndev,
 {
 	struct prueth_emac *emac = netdev_priv(ndev);
 	struct prueth *prueth = emac->prueth;
-	int i;
-	int slice = prueth_emac_slice(emac);
-	u32 base = stats_base[slice];
-	u32 val;
+	struct regmap *miig_rt;
+	int i, slice, icssg;
+	bool skip = false;
+	u32 base, val;
 
-	for (i = 0; i < ARRAY_SIZE(icssg_ethtool_stats); i++) {
-		regmap_read(prueth->miig_rt,
-			    base + icssg_ethtool_stats[i].offset,
-			    &val);
-		data[i] = val;
+	icssg = emac->ingress_icssg;
+	miig_rt = prueth->miig_rt[icssg];
+	slice = emac->ingress_slice;
+	base = stats_base[slice];
+	if (!prueth->dual_icssg) {
+		for (i = 0; i < ARRAY_SIZE(icssg_ethtool_stats); i++) {
+			regmap_read(miig_rt,
+				    base + icssg_ethtool_stats[i].offset,
+				    &val);
+			data[i] = val;
+		}
+	} else {
+		for (i = 0; i < ARRAY_SIZE(icssg_ethtool_stats); i++) {
+			if (!skip && icssg_ethtool_stats[i].offset >=
+			    offsetof(struct miig_stats_regs, tx_good_frames)) {
+				icssg = emac->egress_icssg;
+				slice = emac->egress_slice;
+				miig_rt = prueth->miig_rt[icssg];
+				base = stats_base[slice];
+				skip = true;
+			}
+			regmap_read(miig_rt,
+				    base + icssg_ethtool_stats[i].offset,
+				    &val);
+			data[i] = val;
+		}
 	}
 }
 

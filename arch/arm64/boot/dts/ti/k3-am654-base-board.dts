@@ -81,27 +81,11 @@
 				"ti-pruss/am65x-rtu1-prueth-fw.elf";
 		mii-g-rt = <&icssg2_mii_g_rt>;
 		dma-coherent;
-		dmas = <&main_udmap &pruss2_eth 0 UDMA_DIR_TX>,	/* SLICE 0 */
-		       <&main_udmap &pruss2_eth 0 UDMA_DIR_RX>,
-		       <&main_udmap &pruss2_eth 4 UDMA_DIR_TX>,	/* SLICE 1 */
-		       <&main_udmap &pruss2_eth 1 UDMA_DIR_RX>;
+		dmas = <&main_udmap &icssg2 0 UDMA_DIR_TX>,	/* SLICE 0 */
+		       <&main_udmap &icssg2 0 UDMA_DIR_RX>,
+		       <&main_udmap &icssg2 4 UDMA_DIR_TX>,	/* SLICE 1 */
+		       <&main_udmap &icssg2 1 UDMA_DIR_RX>;
 		dma-names = "tx0", "rx0", "tx1", "rx1";
-
-		ti,psil-base = <0x4300>;	/* ICSSG2 PSIL thread start */
-		ti,psil-config0 {
-			linux,udma-mode = <UDMA_PKT_MODE>;
-			ti,psd-size = <0>;
-		};
-
-		ti,psil-config1 {
-			linux,udma-mode = <UDMA_PKT_MODE>;
-			ti,psd-size = <0>;
-		};
-
-		ti,psil-config4 {
-			linux,udma-mode = <UDMA_PKT_MODE>;
-			ti,psd-size = <0>;
-		};
 
 		pruss2_emac0: ethernet-mii0 {
 			phy-handle = <&pruss2_eth0_phy>;

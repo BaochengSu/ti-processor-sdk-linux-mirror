@@ -776,6 +776,23 @@
 				ranges;
 				dma-ranges;
 
+				ti,psil-base = <0x4100>;	/* ICSSG0 PSIL thread start */
+
+				ti,psil-config0 {
+					linux,udma-mode = <UDMA_PKT_MODE>;
+					ti,psd-size = <0>;
+				};
+
+				ti,psil-config1 {
+					linux,udma-mode = <UDMA_PKT_MODE>;
+					ti,psd-size = <0>;
+				};
+
+				ti,psil-config4 {
+					linux,udma-mode = <UDMA_PKT_MODE>;
+					ti,psd-size = <0>;
+				};
+
 				icssg0_mem: memories@0 {
 					reg = <0x0 0x2000>,
 					      <0x2000 0x2000>,
@@ -897,6 +914,23 @@
 				ranges;
 				dma-ranges;
 
+				ti,psil-base = <0x4200>;	/* ICSSG1 PSIL thread start */
+
+				ti,psil-config0 {
+					linux,udma-mode = <UDMA_PKT_MODE>;
+					ti,psd-size = <0>;
+				};
+
+				ti,psil-config1 {
+					linux,udma-mode = <UDMA_PKT_MODE>;
+					ti,psd-size = <0>;
+				};
+
+				ti,psil-config4 {
+					linux,udma-mode = <UDMA_PKT_MODE>;
+					ti,psd-size = <0>;
+				};
+
 				icssg1_mem: memories@0 {
 					reg = <0x0 0x2000>,
 					      <0x2000 0x2000>,
@@ -1017,6 +1051,23 @@
 				#size-cells = <1>;
 				ranges;
 				dma-ranges;
+
+				ti,psil-base = <0x4300>;	/* ICSSG2 PSIL thread start */
+
+				ti,psil-config0 {
+					linux,udma-mode = <UDMA_PKT_MODE>;
+					ti,psd-size = <0>;
+				};
+
+				ti,psil-config1 {
+					linux,udma-mode = <UDMA_PKT_MODE>;
+					ti,psd-size = <0>;
+				};
+
+				ti,psil-config4 {
+					linux,udma-mode = <UDMA_PKT_MODE>;
+					ti,psd-size = <0>;
+				};
 
 				icssg2_mem: memories@0 {
 					reg = <0x0 0x2000>,
