@@ -553,6 +553,9 @@ struct prueth_emac {
 	spinlock_t            ct_lock; /* serialize accesses to ct_ev_msg[] */
 	struct kthread_worker         *ct_kworker;
 	struct kthread_delayed_work    ct_work;
+
+	u32 rx_int_pacing_offset;
+	unsigned int rx_pacing_timeout;
 };
 
 struct prueth_mmap_port_cfg_basis {

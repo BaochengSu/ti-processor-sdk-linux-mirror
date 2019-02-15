@@ -189,11 +189,12 @@ struct prueth_fw_offsets fw_offsets_v2_1 = {
 #define PRUETH_ETH_TYPE_OFFSET           12
 #define PRUETH_ETH_TYPE_UPPER_SHIFT      8
 
-static int prueth_ecap_initialization(struct prueth *prueth,
+static int prueth_ecap_initialization(struct prueth_emac *emac,
 				      u32 new_timeout_val,
 				      u32 use_adaptive,
 				      unsigned int *curr_timeout_val)
 {
+	struct prueth *prueth = emac->prueth;
 	void __iomem *ecap = prueth->mem[PRUETH_MEM_ECAP].va;
 	void __iomem *sram = prueth->mem[PRUETH_MEM_SHARED_RAM].va;
 	u8 val = INTR_PAC_DIS_ADP_LGC_DIS;
@@ -204,8 +205,15 @@ static int prueth_ecap_initialization(struct prueth *prueth,
 
 	if (!new_timeout_val) {
 		/* disable pacing */
-		writeb_relaxed(val, sram + INTR_PAC_STATUS_OFFSET);
-		*curr_timeout_val = new_timeout_val;
+		writeb_relaxed(val, sram + emac->rx_int_pacing_offset);
+		if (PRUETH_HAS_RED(prueth)) {
+			prueth->emac[PRUETH_MAC0]->rx_pacing_timeout =
+				new_timeout_val;
+			prueth->emac[PRUETH_MAC1]->rx_pacing_timeout =
+				new_timeout_val;
+		} else {
+			emac->rx_pacing_timeout = new_timeout_val;
+		}
 		return 0;
 	}
 
@@ -218,24 +226,51 @@ static int prueth_ecap_initialization(struct prueth *prueth,
 		writew_relaxed(ECAP_ECCTL2_INIT_VAL, ecap + ECAP_ECCTL2);
 		writel_relaxed(ECAP_CAP2_MAX_COUNT, ecap + ECAP_CAP1);
 		writel_relaxed(ECAP_CAP2_MAX_COUNT, ecap + ECAP_CAP2);
+
 		writeb_relaxed(INTR_PAC_DIS_ADP_LGC_DIS,
-			       sram + INTR_PAC_STATUS_OFFSET);
-		writel_relaxed(new_timeout_val * NSEC_PER_USEC / ECAP_TICK_NSEC,
-			       sram + INTR_PAC_TMR_EXP_OFFSET_PRU0);
-		writel_relaxed(new_timeout_val * NSEC_PER_USEC / ECAP_TICK_NSEC,
-			       sram + INTR_PAC_TMR_EXP_OFFSET_PRU1);
-		writel_relaxed(INTR_PAC_PREV_TS_RESET_VAL,
-			       sram + INTR_PAC_PREV_TS_OFFSET_PRU0);
-		writel_relaxed(INTR_PAC_PREV_TS_RESET_VAL,
-			       sram + INTR_PAC_PREV_TS_OFFSET_PRU1);
+			       sram + emac->rx_int_pacing_offset);
+		if (PRUETH_HAS_RED(prueth) ||
+		    (PRUETH_IS_EMAC(prueth) &&
+			 emac->port_id == PRUETH_PORT_MII0)) {
+			writel_relaxed(new_timeout_val *
+				       NSEC_PER_USEC / ECAP_TICK_NSEC,
+				       sram + INTR_PAC_TMR_EXP_OFFSET_PRU0);
+			writel_relaxed(INTR_PAC_PREV_TS_RESET_VAL,
+				       sram + INTR_PAC_PREV_TS_OFFSET_PRU0);
+		}
+		if (PRUETH_HAS_RED(prueth) ||
+		    (PRUETH_IS_EMAC(prueth) &&
+		     emac->port_id == PRUETH_PORT_MII1)) {
+			writel_relaxed(new_timeout_val *
+				       NSEC_PER_USEC / ECAP_TICK_NSEC,
+				       sram + INTR_PAC_TMR_EXP_OFFSET_PRU1);
+			writel_relaxed(INTR_PAC_PREV_TS_RESET_VAL,
+				       sram + INTR_PAC_PREV_TS_OFFSET_PRU1);
+		}
 	} else {
-		writel_relaxed(new_timeout_val * NSEC_PER_USEC / ECAP_TICK_NSEC,
-			       sram + INTR_PAC_TMR_EXP_OFFSET_PRU0);
-		writel_relaxed(new_timeout_val * NSEC_PER_USEC / ECAP_TICK_NSEC,
-			       sram + INTR_PAC_TMR_EXP_OFFSET_PRU1);
+		if (PRUETH_HAS_RED(prueth) ||
+		    (PRUETH_IS_EMAC(prueth) &&
+		     emac->port_id == PRUETH_PORT_MII0)) {
+			writel_relaxed(new_timeout_val *
+				       NSEC_PER_USEC / ECAP_TICK_NSEC,
+				       sram + INTR_PAC_TMR_EXP_OFFSET_PRU0);
+		}
+		if (PRUETH_HAS_RED(prueth) ||
+		    (PRUETH_IS_EMAC(prueth) &&
+		     emac->port_id == PRUETH_PORT_MII1)) {
+			writel_relaxed(new_timeout_val *
+				       NSEC_PER_USEC / ECAP_TICK_NSEC,
+				       sram + INTR_PAC_TMR_EXP_OFFSET_PRU1);
+		}
 	}
-	writeb_relaxed(val, sram + INTR_PAC_STATUS_OFFSET);
-	*curr_timeout_val = new_timeout_val;
+	writeb_relaxed(val, sram + emac->rx_int_pacing_offset);
+
+	if (PRUETH_HAS_RED(prueth)) {
+		prueth->emac[PRUETH_MAC0]->rx_pacing_timeout = new_timeout_val;
+		prueth->emac[PRUETH_MAC1]->rx_pacing_timeout = new_timeout_val;
+	} else {
+		emac->rx_pacing_timeout = new_timeout_val;
+	}
 	return 0;
 }
 
@@ -3331,15 +3366,27 @@ static int emac_ndo_open(struct net_device *ndev)
 	emac->nsp_timer_count = PRUETH_DEFAULT_NSP_TIMER_COUNT;
 	prueth_start_timer(prueth);
 
+	/* initialize rx interrupt pacing control offsets */
+	if (PRUETH_HAS_RED(prueth)) {
+		prueth->emac[PRUETH_MAC0]->rx_int_pacing_offset =
+			INTR_PAC_STATUS_OFFSET;
+		prueth->emac[PRUETH_MAC1]->rx_int_pacing_offset =
+			INTR_PAC_STATUS_OFFSET;
+	} else if (emac->port_id == PRUETH_PORT_MII0) {
+		emac->rx_int_pacing_offset = INTR_PAC_STATUS_OFFSET_PRU0;
+	} else {
+		emac->rx_int_pacing_offset = INTR_PAC_STATUS_OFFSET_PRU1;
+	}
+
 	/* Configure ecap for interrupt pacing, Don't
 	 * check return value here as this returns
 	 * error only if there is no ecap register address
 	 * which would result in pacing disabled
 	 */
-	if (!prueth->emac_configured)
-		prueth_ecap_initialization(prueth,
+	if (!prueth->emac_configured || PRUETH_IS_EMAC(prueth))
+		prueth_ecap_initialization(emac,
 					   DEFAULT_RX_TIMEOUT_USEC,
-					   0, &prueth->rx_pacing_timeout);
+					   0, &emac->rx_pacing_timeout);
 
 	prueth->emac_configured |= BIT(emac->port_id);
 	mutex_unlock(&prueth->mlock);
@@ -4267,12 +4314,12 @@ static int emac_get_coalesce(struct net_device *ndev,
 	void __iomem *ecap = prueth->mem[PRUETH_MEM_ECAP].va;
 	u32 val;
 
-	if (!PRUETH_HAS_RED(prueth) || !ecap)
+	if (!ecap)
 		return -EOPNOTSUPP;
 
-	val = readb_relaxed(sram + INTR_PAC_STATUS_OFFSET);
+	val = readb_relaxed(sram + emac->rx_int_pacing_offset);
 	coal->use_adaptive_rx_coalesce = (val == INTR_PAC_ENA_ADP_LGC_ENA);
-	coal->rx_coalesce_usecs = prueth->rx_pacing_timeout;
+	coal->rx_coalesce_usecs = emac->rx_pacing_timeout;
 	return 0;
 }
 
@@ -4282,9 +4329,6 @@ static int emac_set_coalesce(struct net_device *ndev,
 	struct prueth_emac *emac = netdev_priv(ndev);
 	struct prueth *prueth = emac->prueth;
 	int ret;
-
-	if (!PRUETH_HAS_RED(prueth))
-		return -EOPNOTSUPP;
 
 	if (coal->rx_coalesce_usecs  > MAX_RX_TIMEOUT_USEC)
 		return -EOPNOTSUPP;
@@ -4296,10 +4340,10 @@ static int emac_set_coalesce(struct net_device *ndev,
 	 * timer and the same can be passed to the function here when
 	 * supported
 	 */
-	ret = prueth_ecap_initialization(prueth,
+	ret = prueth_ecap_initialization(emac,
 					 coal->rx_coalesce_usecs,
 					 coal->use_adaptive_rx_coalesce,
-					 &prueth->rx_pacing_timeout);
+					 &emac->rx_pacing_timeout);
 	mutex_unlock(&prueth->mlock);
 
 	return ret;
