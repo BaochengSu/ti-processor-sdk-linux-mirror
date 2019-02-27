@@ -43,6 +43,8 @@
 					"ti-pruss/am65x-rtu1-prueth-fw.elf";
 			mii-g-rt = <&icssg0_mii_g_rt>;
 			mii-g-rt-paired = <&icssg1_mii_g_rt>;
+			mii-rt = <&icssg0_mii_rt>;
+			mii-rt-paired = <&icssg1_mii_rt>;
 
 			dma-coherent;
 			dmas = <&main_udmap &icssg0 4 UDMA_DIR_TX>,	/* ICSSG0 SLICE 1 */

@@ -180,6 +180,7 @@ struct prueth {
 	const struct prueth_private_data *fw_data;
 	struct icss_hs hs[NUM_ICSSG][PRUSS_NUM_PRUS];
 	struct regmap *miig_rt[NUM_ICSSG];
+	struct regmap *mii_rt[NUM_ICSSG];
 	int pruss_id[NUM_ICSSG];
 	/* For boards with dual icss per prueth port, this will be true */
 	bool dual_icssg;
@@ -202,6 +203,10 @@ void icssg_class_set_mac_addr(struct regmap *miig_rt, int slice, u8 *mac);
 void icssg_class_disable(struct regmap *miig_rt, int slice);
 void icssg_class_default(struct regmap *miig_rt, int slice);
 void icssg_class_promiscuous(struct regmap *miig_rt, int slice);
+void icssg_update_rgmii_cfg(struct regmap *miig_rt, bool gig_en, bool duplex,
+			    int slice);
+void icssg_update_mii_rt_cfg(struct regmap *mii_rt, int speed,
+			     int slice);
 
 /* get PRUSS SLICE number from prueth_emac */
 static inline int prueth_emac_slice(struct prueth_emac *emac)

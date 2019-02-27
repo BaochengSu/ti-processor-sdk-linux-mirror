@@ -15,7 +15,10 @@ Required properties:
 - dma-names	   : Names for the DMA channels.
 			Should be "tx0", "rx0",	"tx1", "rx1"
 - mii-g-rt	   : phandle to MII_G_RT module's syscon regmap.
-- mii-g-rt0-paired : phandle to paired ICSSG's MII_G_RT module's syscon
+- mii-g-rt-paired  : phandle to paired ICSSG's MII_G_RT module's syscon
+		     regmap.
+- mii-rt	   : phandle to MII_RT module's syscon regmap.
+- mii-rt-paired    : phandle to paired ICSSG's MII_RT module's syscon
 		     regmap.
 
 Must contain children, one for each of the MAC ports.

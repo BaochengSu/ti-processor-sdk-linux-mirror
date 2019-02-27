@@ -743,11 +743,25 @@ static void prueth_emac_stop(struct prueth_emac *emac, bool ingress)
 static void emac_adjust_link(struct net_device *ndev)
 {
 	struct prueth_emac *emac = netdev_priv(ndev);
+	struct prueth *prueth = emac->prueth;
+	bool gig_en = false, duplex = false;
 	struct phy_device *phydev = emac->phydev;
-	unsigned long flags;
+	struct regmap *miig_rt, *miig_rt_pair;
 	bool new_state = false;
+	struct regmap *mii_rt;
+	unsigned long flags;
 
 	spin_lock_irqsave(&emac->lock, flags);
+
+	if (!prueth->dual_icssg) {
+		miig_rt = prueth->miig_rt[emac->ingress_icssg];
+		miig_rt_pair = NULL;
+		mii_rt = prueth->mii_rt[emac->egress_icssg];
+	} else {
+		miig_rt = prueth->miig_rt[emac->ingress_icssg];
+		miig_rt_pair = prueth->miig_rt[emac->egress_icssg];
+		mii_rt = prueth->mii_rt[emac->egress_icssg];
+	}
 
 	if (phydev->link) {
 		/* check the mode of operation - full/half duplex */
@@ -763,6 +777,20 @@ static void emac_adjust_link(struct net_device *ndev)
 			new_state = true;
 			emac->link = 1;
 		}
+		if (phydev->speed == SPEED_1000)
+			gig_en = true;
+		if (phydev->duplex == DUPLEX_FULL)
+			duplex = true;
+
+		/* Set the rgmii cfg for gig en and duplex */
+		icssg_update_rgmii_cfg(miig_rt, gig_en, duplex,
+				       emac->ingress_slice);
+		/* update the Tx IPG based on 100M/1G speed */
+		icssg_update_mii_rt_cfg(mii_rt, emac->speed,
+					emac->egress_slice);
+		if (miig_rt_pair)
+			icssg_update_rgmii_cfg(miig_rt_pair, gig_en,
+					       duplex, emac->egress_slice);
 	} else if (emac->link) {
 		new_state = true;
 		emac->link = 0;
@@ -773,6 +801,13 @@ static void emac_adjust_link(struct net_device *ndev)
 
 		/* half duplex may not be supported by f/w */
 		emac->duplex = DUPLEX_FULL;
+		icssg_update_rgmii_cfg(miig_rt, true, true,
+				       emac->port_id);
+		icssg_update_mii_rt_cfg(mii_rt, emac->speed,
+					emac->egress_slice);
+		if (miig_rt_pair)
+			icssg_update_rgmii_cfg(miig_rt_pair, true, true,
+					       emac->port_id);
 	}
 
 	/* FIXME: Do we need to update PHY status to Firmware? */
@@ -1439,7 +1474,7 @@ static int prueth_probe(struct platform_device *pdev)
 
 	prueth->miig_rt[ICSSG0] =
 		syscon_regmap_lookup_by_phandle(np, "mii-g-rt");
-	if (IS_ERR(prueth->miig_rt)) {
+	if (IS_ERR(prueth->miig_rt[ICSSG0])) {
 		dev_err(dev, "couldn't get mii-g-rt syscon regmap\n");
 		return -ENODEV;
 	}
@@ -1449,6 +1484,22 @@ static int prueth_probe(struct platform_device *pdev)
 			syscon_regmap_lookup_by_phandle(np, "mii-g-rt-paired");
 		if (IS_ERR(prueth->miig_rt[ICSSG1])) {
 			dev_err(dev, "couldn't get mii-g-rt-paired syscon regmap\n");
+			return -ENODEV;
+		}
+	}
+
+	prueth->mii_rt[ICSSG0] =
+		syscon_regmap_lookup_by_phandle(np, "mii-rt");
+	if (IS_ERR(prueth->mii_rt[ICSSG0])) {
+		dev_err(dev, "couldn't get mii-rt syscon regmap\n");
+		return -ENODEV;
+	}
+
+	if (prueth->dual_icssg) {
+		prueth->mii_rt[ICSSG1] =
+			syscon_regmap_lookup_by_phandle(np, "mii-rt-paired");
+		if (IS_ERR(prueth->mii_rt[ICSSG1])) {
+			dev_err(dev, "couldn't get mii-rt-paired syscon regmap\n");
 			return -ENODEV;
 		}
 	}
