@@ -148,6 +148,14 @@
 #define IEC62439_CONST_TRANSPARENT_RECEPTION_REMOVE_RCT 0x01
 #define IEC62439_CONST_TRANSPARENT_RECEPTION_PASS_RCT   0x02
 
+/* Enable/disable interrupts for high/low priority instead of per port.
+ * 0 = disabled (default) 1 = enabled
+ */
+#define PRIORITY_INTRS_STATUS_OFFSET    0x1FAA
+/* Enable/disable timestamping of packets. 0 = disabled (default) 1 = enabled */
+#define TIMESTAMP_PKTS_STATUS_OFFSET    0x1FAB
+#define TIMESTAMP_ARRAY_OFFSET          0xC200
+
 /* PRU1 DMEM
  * Multicast filter defines & offsets
  */

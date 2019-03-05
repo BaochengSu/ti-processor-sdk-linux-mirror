@@ -28,6 +28,8 @@
 				      <4>;	/* MII2, needed for PRUSS1_MII1 */
 		sram = <&ocmcram1>;
 		interrupt-parent = <&pruss1_intc>;
+		interrupts = <20>, <21>;
+		interrupt-names = "rx_red_hp", "rx_red_lp";
 
 		pruss1_emac0: ethernet-mii0 {
 			phy-handle = <&pruss1_eth0_phy>;

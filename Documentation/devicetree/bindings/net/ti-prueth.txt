@@ -26,6 +26,12 @@ Required properties:
     mii0: tx-queue-size = /bits/ 16 <97 97 97 97>
     mii1: tx-queue-size = /bits/ 16 <97 97 97 97>
 
+Optional properties:
+- interrupt-names  : If enabling packet priority based interrupts for HSR/PRP,
+		     should be "rx_red_hp", "rx_red_lp".
+- interrupts       : should contain an array of PRUSS system event
+                     numbers.
+
 Must contain children, one for each of the MAC ports.
 Children must be named ethernet-mii0 and ethernet-mii1.
 Either one or both children can be present. If only one
