@@ -1435,6 +1435,7 @@ static int prueth_hsr_prp_lre_init(struct prueth *prueth)
 	       sram + LRE_DUPLICATE_DISCARD);
 	writel(IEC62439_CONST_TRANSPARENT_RECEPTION_REMOVE_RCT,
 	       sram + LRE_TRANSPARENT_RECEPTION);
+	prueth->prp_tr_mode = IEC62439_3_TR_REMOVE_RCT;
 	return 0;
 }
 
@@ -1968,7 +1969,7 @@ static int emac_rx_packet(struct prueth_emac *emac, u16 *bd_rd_ptr,
 	int ret;
 
 	if (PRUETH_HAS_HSR(prueth))
-		start_offset = (pkt_info.start_offset ? HSR_TAG_SIZE : 0);
+		start_offset = (pkt_info.start_offset ? RED_TAG_RCT_SIZE : 0);
 
 	/* the PRU firmware deals mostly in pointers already
 	 * offset into ram, we would like to deal in indexes
@@ -2084,8 +2085,12 @@ static int emac_rx_packet(struct prueth_emac *emac, u16 *bd_rd_ptr,
 		}
 	}
 
-	if (PRUETH_HAS_RED(prueth) && pkt_info.start_offset)
-		pkt_info.length -= HSR_TAG_SIZE;
+	if (pkt_info.start_offset) {
+		if ((PRUETH_HAS_PRP(prueth) &&
+		     prueth->prp_tr_mode == IEC62439_3_TR_REMOVE_RCT) ||
+		     (PRUETH_HAS_HSR(prueth)))
+			pkt_info.length -= RED_TAG_RCT_SIZE;
+	}
 
 	if (!pkt_info.sv_frame) {
 		skb_put(skb, pkt_info.length);
@@ -4751,7 +4756,7 @@ static int emac_lredev_attr_get(struct net_device *ndev,
 	case LREDEV_ATTR_ID_PRP_TR:
 		if (!PRUETH_HAS_PRP(prueth))
 			return -EINVAL;
-		attr->tr_mode = readl(sram + LRE_TRANSPARENT_RECEPTION);
+		attr->tr_mode = prueth->prp_tr_mode;
 		break;
 	case LREDEV_ATTR_ID_DLRMT:
 		attr->dl_reside_max_time =
@@ -4793,7 +4798,7 @@ static int emac_lredev_attr_set(struct net_device *ndev,
 	case LREDEV_ATTR_ID_PRP_TR:
 		if (!PRUETH_HAS_PRP(prueth))
 			return -EINVAL;
-		writel(attr->tr_mode, sram + LRE_TRANSPARENT_RECEPTION);
+		prueth->prp_tr_mode = attr->tr_mode;
 		break;
 	case LREDEV_ATTR_ID_DLRMT:
 		/* input is in milli seconds. Firmware expects in unit
@@ -5083,7 +5088,9 @@ static int prueth_netdev_init(struct prueth *prueth,
 
 	ndev->netdev_ops = &emac_netdev_ops;
 	ndev->ethtool_ops = &emac_ethtool_ops;
+#ifdef CONFIG_HSR_PRP
 	ndev->lredev_ops = &emac_lredev_ops;
+#endif
 
 	return 0;
 

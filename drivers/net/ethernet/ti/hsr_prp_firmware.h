@@ -14,7 +14,7 @@
 #ifndef __ICSS_SWITCH_HSR_PRP_H
 #define __ICSS_SWITCH_HSR_PRP_H
 
-#define HSR_TAG_SIZE                     6       /* HSR tag size */
+#define RED_TAG_RCT_SIZE                 6       /* HSR tag or PRP RCT size */
 
 #define LRE_HSR_MODE                      0x1E76
 #define MODEH                             0x01

@@ -21,6 +21,7 @@
 #include <linux/kthread.h>
 #include <linux/pruss.h>
 #include <linux/if_ether.h>
+#include <net/lredev.h>
 #ifdef CONFIG_PREEMPT_RT_FULL
 #include <linux/swork.h>
 #endif
@@ -638,6 +639,7 @@ struct prueth {
 	struct prueth_ndev_priority *hp, *lp;
 
 	int fw_drop_untagged_vlan;
+	enum iec62439_3_tr_modes prp_tr_mode;
 	struct device_node *eth_node[PRUETH_NUM_MACS];
 	struct device_node *prueth_np;
 	struct prueth_emac *emac[PRUETH_NUM_MACS];
