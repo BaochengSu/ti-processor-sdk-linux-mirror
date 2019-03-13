@@ -979,9 +979,11 @@
 					reg = <0x0 0x2000>,
 					      <0x2000 0x2000>,
 					      <0x10000 0x8000>,
-					      <0x2e000 0x31c>;
+					      <0x2e000 0x31c>,
+					      <0x30000 0x60>;
 					reg-names = "dram0", "dram1",
-						    "shrdram2", "iep";
+						    "shrdram2", "iep",
+						    "ecap";
 				};
 
 				pruss1_cfg: cfg@26000 {
@@ -1060,8 +1062,10 @@
 				pruss0_mem: memories@40000 {
 					reg = <0x40000 0x1000>,
 					      <0x42000 0x1000>,
-					      <0x6e000 0x31c>;
-					reg-names = "dram0", "dram1", "iep";
+					      <0x6e000 0x31c>,
+					      <0x30000 0x60>;
+					reg-names = "dram0", "dram1", "iep",
+						    "ecap";
 				};
 
 				pruss0_cfg: cfg@66000 {

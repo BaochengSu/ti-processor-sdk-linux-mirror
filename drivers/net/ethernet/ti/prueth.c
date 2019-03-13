@@ -2814,14 +2814,24 @@ static void prueth_configure_queue_sizes(struct prueth_emac *emac,
 {
 	struct prueth *prueth = emac->prueth;
 	bool dt_updated = false;
+	struct prueth_mmap_port_cfg_basis *pb;
 
 	dt_updated = prueth_of_get_queue_sizes(prueth, np, PRUETH_PORT_HOST,
 					       emac->ndev);
 	dt_updated |= prueth_of_get_queue_sizes(prueth, eth_node, emac->port_id,
 						emac->ndev);
-	dt_updated |= prueth_of_get_queue_sizes(prueth, other_eth_node,
-						other_emac->port_id,
-						emac->ndev);
+	/* If other port exists, get sizes from DT */
+	if (other_emac) {
+		dt_updated |= prueth_of_get_queue_sizes(prueth, other_eth_node,
+							other_emac->port_id,
+							emac->ndev);
+	/* If other port doesn't exist, init default offsets so that offsets for
+	 * first port are accessed correctly
+	 */
+	} else {
+		pb = &prueth->mmap_port_cfg_basis[other_port_id(emac->port_id)];
+		prueth_copy_queue_sizes(pb->queue_size, txq_size_defaults);
+	}
 	if (dt_updated)
 		prueth_sanitize_queue_sizes(prueth, emac->ndev);
 }
@@ -3474,8 +3484,9 @@ static int emac_ndo_open(struct net_device *ndev)
 		prueth_init_mmap_configs(prueth);
 
 		emac_calculate_queue_offsets(prueth, eth_node, emac);
-		emac_calculate_queue_offsets(prueth, other_eth_node,
-					     other_emac);
+		if (other_emac)
+			emac_calculate_queue_offsets(prueth, other_eth_node,
+						     other_emac);
 
 		ret = prueth_hostinit(prueth);
 		if (ret) {
@@ -4026,7 +4037,7 @@ static int emac_ndo_set_features(struct net_device *ndev,
 	other_port = other_port_id(emac->port_id);
 	/* MAC instance index starts from 0. So index by port_id - 1 */
 	other_emac = prueth->emac[other_port - 1];
-	if (netif_running(other_emac->ndev) && change_request) {
+	if (other_emac && netif_running(other_emac->ndev) && change_request) {
 		netdev_err(ndev,
 			   "Can't change feature when other device runs\n");
 		return -EBUSY;
@@ -5258,9 +5269,7 @@ static int prueth_probe(struct platform_device *pdev)
 
 		if (!eth1_node && i == PRUETH_MEM_DRAM1)
 			continue;
-		if ((prueth->fw_data->driver_data != PRUSS_AM57XX) &&
-		    (i == PRUETH_MEM_ECAP))
-			continue;
+
 		ret = pruss_request_mem_region(pruss, pruss_mem_ids[i],
 					       &prueth->mem[i]);
 		if (ret) {
@@ -5357,38 +5366,41 @@ static int prueth_probe(struct platform_device *pdev)
 	prueth_init_mem(prueth);
 
 	if (prueth->pruss_id == pruss_id1) {
-		if (PRUETH_HAS_RED(prueth) || PRUETH_IS_EMAC(prueth)) {
+		if (eth0_node)
 			prueth_get_mc_mac_mask(prueth->emac[PRUETH_MAC0],
 					       mc_mask1_port0);
+		if (eth1_node)
 			prueth_get_mc_mac_mask(prueth->emac[PRUETH_MAC1],
 					       mc_mask1_port1);
-		}
 	} else {
-		if (PRUETH_HAS_RED(prueth) || PRUETH_IS_EMAC(prueth)) {
+		if (eth0_node)
 			prueth_get_mc_mac_mask(prueth->emac[PRUETH_MAC0],
 					       mc_mask2_port0);
+		if (eth1_node)
 			prueth_get_mc_mac_mask(prueth->emac[PRUETH_MAC1],
 					       mc_mask2_port1);
-		}
 	}
 
 	dev_info(dev, "pruss_fw_drop_untagged_vlan %d\n",
 		 prueth->fw_drop_untagged_vlan);
-	dev_info(dev, "pruss MC Mask (Port 0) %x:%x:%x:%x:%x:%x\n",
-		 prueth->emac[PRUETH_MAC0]->mc_mac_mask[0],
-		 prueth->emac[PRUETH_MAC0]->mc_mac_mask[1],
-		 prueth->emac[PRUETH_MAC0]->mc_mac_mask[2],
-		 prueth->emac[PRUETH_MAC0]->mc_mac_mask[3],
-		 prueth->emac[PRUETH_MAC0]->mc_mac_mask[4],
-		 prueth->emac[PRUETH_MAC0]->mc_mac_mask[5]);
-	dev_info(dev, "pruss MC Mask (Port 1) %x:%x:%x:%x:%x:%x\n",
-		 prueth->emac[PRUETH_MAC1]->mc_mac_mask[0],
-		 prueth->emac[PRUETH_MAC1]->mc_mac_mask[1],
-		 prueth->emac[PRUETH_MAC1]->mc_mac_mask[2],
-		 prueth->emac[PRUETH_MAC1]->mc_mac_mask[3],
-		 prueth->emac[PRUETH_MAC1]->mc_mac_mask[4],
-		 prueth->emac[PRUETH_MAC1]->mc_mac_mask[5]);
-
+	if (eth0_node) {
+		dev_info(dev, "pruss MC Mask (Port 0) %x:%x:%x:%x:%x:%x\n",
+			 prueth->emac[PRUETH_MAC0]->mc_mac_mask[0],
+			 prueth->emac[PRUETH_MAC0]->mc_mac_mask[1],
+			 prueth->emac[PRUETH_MAC0]->mc_mac_mask[2],
+			 prueth->emac[PRUETH_MAC0]->mc_mac_mask[3],
+			 prueth->emac[PRUETH_MAC0]->mc_mac_mask[4],
+			 prueth->emac[PRUETH_MAC0]->mc_mac_mask[5]);
+	}
+	if (eth1_node) {
+		dev_info(dev, "pruss MC Mask (Port 1) %x:%x:%x:%x:%x:%x\n",
+			 prueth->emac[PRUETH_MAC1]->mc_mac_mask[0],
+			 prueth->emac[PRUETH_MAC1]->mc_mac_mask[1],
+			 prueth->emac[PRUETH_MAC1]->mc_mac_mask[2],
+			 prueth->emac[PRUETH_MAC1]->mc_mac_mask[3],
+			 prueth->emac[PRUETH_MAC1]->mc_mac_mask[4],
+			 prueth->emac[PRUETH_MAC1]->mc_mac_mask[5]);
+	}
 	prueth->iep = iep_create(prueth->dev,
 				 prueth->mem[PRUETH_MEM_SHARED_RAM].va,
 				 prueth->mem[PRUETH_MEM_IEP].va,
